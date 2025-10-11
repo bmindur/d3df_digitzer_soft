@@ -1,0 +1,7 @@
+**************************************************************
+	WaveDemo for x743 Digitizer Family  (version: 1.2.1)
+**************************************************************
+INFO: Opening Configuration File -> WaveDemoConfig.ini
+INFO: Configuration file parsed
+ERROR 3: Can't open the digitizer
+INFO: End.
