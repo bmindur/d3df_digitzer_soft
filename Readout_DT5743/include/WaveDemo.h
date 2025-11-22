@@ -124,7 +124,8 @@
 #define TMAXNBITS		(1<<14)		// Max num of bits for the Time histograms 
 
 //#define MAX_OUTPUT_FILE_SIZE (1099511627776) // 1 TB
-#define MAX_OUTPUT_FILE_SIZE   (2147483648) // 2 GB
+// #define MAX_OUTPUT_FILE_SIZE   (2147483648) // 2 GB
+#define MAX_OUTPUT_FILE_SIZE   (1073741824) // 1 GB
 
 #define HISTO_FILE_FORMAT_1COL		0  // ascii 1 coloumn
 #define HISTO_FILE_FORMAT_2COL		1  // ascii 1 coloumn
