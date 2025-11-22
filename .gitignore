@@ -272,3 +272,4 @@ dkms.conf
 
 # debug information files
 *.dwo
+Python/_OLD_DEL/

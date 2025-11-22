@@ -1,0 +1,37 @@
+[project]
+name = "d3df-single-pmt"
+version = "0.2.0"
+description = "CAEN DT5743 waveform CSV to HDF5 converter, pulse analysis, and advanced plotting for single PMT workflows."
+authors = [{name = "bmindur"}]
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.9"
+keywords = ["waveform", "DT5743", "HDF5", "converter"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering"
+]
+
+dependencies = [
+  "numpy",
+  "h5py",
+  "pandas",
+  "matplotlib",
+  "pyserial"
+]
+
+[project.urls]
+Homepage = "https://github.com/bmindur/d3df_digitzer_soft"
+
+[project.scripts]
+convert-dt5743 = "d3df_single_pmt.cli:main"
+convert-dt = "d3df_single_pmt.cli:main"
+analyze-dt-hdf = "d3df_single_pmt.analysis:main"
+convert-dsa90804a = "d3df_single_pmt.dsa_converter:main"
+caen-hv = "d3df_single_pmt.caen_hv:main"
+plot-analysis = "d3df_single_pmt.plot_analysis:main"
+
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"

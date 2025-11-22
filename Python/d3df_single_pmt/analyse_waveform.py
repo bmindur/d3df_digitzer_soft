@@ -3,6 +3,72 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import h5py
+import re
+from scipy import signal
+
+def parse_run_info(run_info_path):
+    """Parse a run_info file extracting key experimental parameters.
+
+    Extracts:
+      PMT_HV, SOURCE, SCINTILATOR,
+      TRIGGER_THRESHOLD (common section as trigger_threshold_common),
+      TRIGGER_THRESHOLD for individual channels (trigger_threshold_board{b}_ch{c}).
+
+    Returns dict of extracted values. Missing values are omitted.
+    """
+    if not run_info_path or not os.path.isfile(run_info_path):
+        return {}
+
+    results = {}
+    current_section = None
+    channel_thresholds = {}
+    common_threshold = None
+
+    p_pmt_hv = re.compile(r'^\s*PMT_HV\s*=\s*([+-]?\d+)')
+    p_source = re.compile(r'^\s*SOURCE\s*=\s*(.+)')
+    p_scint = re.compile(r'^\s*SCINTILATOR\s*=\s*(.+)')
+    p_trigger = re.compile(r'^\s*TRIGGER_THRESHOLD\s*=\s*([+-]?[0-9]*\.?[0-9]+(?:[Ee][+-]?\d+)?)')
+    p_section = re.compile(r'^\s*\[(.+?)\]\s*$')
+    p_board_channel = re.compile(r'BOARD\s*(\d+)\s*-\s*CHANNEL\s*(\d+)', re.IGNORECASE)
+
+    try:
+        with open(run_info_path, 'r', encoding='utf-8', errors='ignore') as fh:
+            for raw_line in fh:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                m_sec = p_section.match(line)
+                if m_sec:
+                    current_section = m_sec.group(1).strip().upper()
+                    continue
+                m_pmt = p_pmt_hv.match(line)
+                if m_pmt and 'pmt_hv' not in results:
+                    results['pmt_hv'] = int(m_pmt.group(1))
+                m_src = p_source.match(line)
+                if m_src and 'source' not in results:
+                    results['source'] = m_src.group(1).strip()
+                m_sci = p_scint.match(line)
+                if m_sci and 'scintilator' not in results:
+                    results['scintilator'] = m_sci.group(1).strip()
+                m_trig = p_trigger.match(line)
+                if m_trig:
+                    val = float(m_trig.group(1))
+                    if current_section == 'COMMON':
+                        common_threshold = val
+                    else:
+                        m_bc = p_board_channel.search(current_section or '')
+                        if m_bc:
+                            board = m_bc.group(1)
+                            channel = m_bc.group(2)
+                            channel_thresholds[(board, channel)] = val
+    except Exception:
+        return results  # return whatever was parsed so far
+
+    if common_threshold is not None:
+        results['trigger_threshold_common'] = common_threshold
+    for (board, channel), thresh in channel_thresholds.items():
+        results[f'trigger_threshold_board{board}_ch{channel}'] = thresh
+    return results
 
 
 def load_hdf5_data(hdf5_file):
@@ -29,6 +95,32 @@ def load_hdf5_data(hdf5_file):
             metadata = {}
             for key in f.attrs.keys():
                 metadata[key] = f.attrs[key]
+
+            # Attempt to enrich metadata with run_info parsing if fields missing
+            need_run_info = any(k not in metadata for k in ['pmt_hv', 'source', 'scintilator', 'trigger_threshold_common'])
+            run_info_path_candidates = []
+            if 'run_info_file' in metadata:
+                run_info_path_candidates.append(str(metadata['run_info_file']))
+            if 'source_file' in metadata:
+                base = os.path.basename(str(metadata['source_file']))
+                derived = base.replace('Wave_0_0', 'run_info')
+                run_info_path_candidates.append(os.path.join(os.path.dirname(hdf5_file), derived))
+            # Generic search in same folder
+            run_info_path_candidates.extend([os.path.join(os.path.dirname(hdf5_file), fn) for fn in os.listdir(os.path.dirname(hdf5_file)) if fn.lower().startswith('run_info') and fn.lower().endswith('.txt')])
+            parsed = {}
+            if need_run_info:
+                for cand in run_info_path_candidates:
+                    parsed = parse_run_info(cand)
+                    if parsed:
+                        metadata.update(parsed)
+                        metadata.setdefault('run_info_file', cand)
+                        break
+            else:
+                # still parse if we have explicit run_info_file to ensure channel thresholds present
+                if 'run_info_file' in metadata:
+                    parsed = parse_run_info(str(metadata['run_info_file']))
+                    for k, v in parsed.items():
+                        metadata.setdefault(k, v)
             
             print(f"Loaded HDF5 file: {hdf5_file}")
             print(f"  Number of events: {metadata.get('num_events', len(timestamps))}")
@@ -36,6 +128,11 @@ def load_hdf5_data(hdf5_file):
             print(f"  Sampling rate: {metadata.get('sampling_rate', 'Unknown')} Hz")
             print(f"  ADC voltage scaling: {metadata.get('adc_voltage_scaling', 'Unknown')} V/count")
             print(f"  Source file: {metadata.get('source_file', 'Unknown')}")
+            if 'run_info_file' in metadata:
+                print(f"  Run info file: {metadata.get('run_info_file')}")
+            for extra_key in ['pmt_hv','source','scintilator','trigger_threshold_common']:
+                if extra_key in metadata:
+                    print(f"  {extra_key}: {metadata[extra_key]}")
             
     except FileNotFoundError:
         print(f"HDF5 file '{hdf5_file}' not found")
@@ -100,7 +197,7 @@ def demonstrate_dataframe_operations(ADC_df):
         print(stats.head())
 
 
-def plot_dataframe_data(ADC_df, prefix, metadata=None):
+def plot_dataframe_data(ADC_df, prefix, metadata=None, folder_path='.'):
     """
     Create plots from the DataFrame data.
     """
@@ -132,12 +229,13 @@ def plot_dataframe_data(ADC_df, prefix, metadata=None):
         ax2.grid(True, alpha=0.3)
         
     plt.tight_layout()
-    plt.savefig(f'{prefix}_dataframe_analysis.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_dataframe_analysis.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"Saved plot: {prefix}_dataframe_analysis.png")
+    print(f"Saved plot: {output_path}")
 
 
-def plot_adc_diagram(ADC_df, prefix, alpha=0.1, max_pulses=None):
+def plot_adc_diagram(ADC_df, prefix, alpha=0.1, max_pulses=None, folder_path='.'):
     """
     Create an diagram-style plot showing all ADC pulses overlaid.
     Similar to oscilloscope diagram - all pulses plotted on top of each other.
@@ -147,6 +245,7 @@ def plot_adc_diagram(ADC_df, prefix, alpha=0.1, max_pulses=None):
         prefix: prefix for saving the plot
         alpha: transparency for individual pulses (0.1 = very transparent)
         max_pulses: maximum number of pulses to plot (None = plot all)
+        folder_path: folder to save the plot
     """
     
     if ADC_df is None:
@@ -185,9 +284,92 @@ def plot_adc_diagram(ADC_df, prefix, alpha=0.1, max_pulses=None):
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(f'{prefix}_ADC_diagram.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_ADC_diagram.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"Saved ADC diagram: {prefix}_ADC_diagram.png")
+    print(f"Saved ADC diagram: {output_path}")
+
+
+def align_pulses_by_peak(ADC_df, reference_position=None, search_window=None):
+    """
+    Align pulses by shifting them to a common peak position.
+    
+    Args:
+        ADC_df: pandas DataFrame where each row is an ADC pulse
+        reference_position: target position for peaks (default: middle of window)
+        search_window: tuple (start, end) to search for peaks (default: full range)
+    
+    Returns:
+        aligned_df: pandas DataFrame with aligned pulses
+        peak_positions: array of original peak positions found
+    """
+    
+    if ADC_df is None or ADC_df.empty:
+        print("No ADC data available for alignment")
+        return None, None
+    
+    n_pulses = ADC_df.shape[0]
+    n_samples = ADC_df.shape[1]
+    
+    # Set default reference position to middle of window
+    if reference_position is None:
+        reference_position = n_samples // 2
+    
+    # Set default search window to full range
+    if search_window is None:
+        search_window = (0, n_samples)
+    
+    # Find peak position in each pulse
+    peak_positions = np.zeros(n_pulses, dtype=int)
+    
+    for i in range(n_pulses):
+        pulse = ADC_df.iloc[i, :].values
+        search_region = pulse[search_window[0]:search_window[1]]
+        
+        # Determine if pulse is positive or negative by checking absolute extrema
+        abs_max = np.max(np.abs(search_region))
+        if abs_max == 0:
+            peak_positions[i] = reference_position
+            continue
+        
+        # Find peak (most extreme value)
+        if np.max(search_region) > abs(np.min(search_region)):
+            # Positive pulse
+            peak_idx = np.argmax(search_region) + search_window[0]
+        else:
+            # Negative pulse
+            peak_idx = np.argmin(search_region) + search_window[0]
+        
+        peak_positions[i] = peak_idx
+    
+    # Calculate median peak position for robust reference
+    median_peak = int(np.median(peak_positions))
+    
+    # Align pulses by shifting to reference position
+    aligned_data = np.zeros_like(ADC_df.values)
+    
+    for i in range(n_pulses):
+        shift = reference_position - peak_positions[i]
+        pulse = ADC_df.iloc[i, :].values
+        
+        if shift == 0:
+            aligned_data[i, :] = pulse
+        elif shift > 0:
+            # Shift right
+            aligned_data[i, shift:] = pulse[:n_samples-shift]
+            aligned_data[i, :shift] = pulse[0]  # Pad with baseline
+        else:
+            # Shift left
+            aligned_data[i, :shift] = pulse[-shift:]
+            aligned_data[i, shift:] = pulse[-1]  # Pad with baseline
+    
+    aligned_df = pd.DataFrame(
+        aligned_data,
+        index=ADC_df.index,
+        columns=ADC_df.columns
+    )
+    
+    return aligned_df, peak_positions
 
 
 def normalize_pulses_to_max(ADC_df, method='individual'):
@@ -246,7 +428,7 @@ def normalize_pulses_to_max(ADC_df, method='individual'):
 
 
 def plot_adc_diagram_normalized(ADC_df, prefix, normalize=True, 
-                               norm_method='individual', alpha=0.1, max_pulses=None):
+                               norm_method='individual', alpha=0.1, max_pulses=None, folder_path='.'):
     """
     Create an eye diagram with optional pulse normalization.
     
@@ -257,6 +439,7 @@ def plot_adc_diagram_normalized(ADC_df, prefix, normalize=True,
         norm_method: 'individual', 'global', or 'baseline'
         alpha: transparency for individual pulses
         max_pulses: maximum number of pulses to plot
+        folder_path: folder to save the plot
     """
     
     if ADC_df is None:
@@ -314,17 +497,19 @@ def plot_adc_diagram_normalized(ADC_df, prefix, normalize=True,
                 bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
     
     plt.tight_layout()
-    plt.savefig(f'{prefix}_ADC_diagram{norm_suffix}.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_ADC_diagram{norm_suffix}.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"Saved normalized ADC diagram: {prefix}_ADC_diagram{norm_suffix}.png")
+    print(f"Saved normalized ADC diagram: {output_path}")
 
 
 def analyze_pulse_timing(ADC_df, sampling_rate, method='individual',
-                         threshold_low=0.1, threshold_high=0.9):
+                         threshold_low=0.1, threshold_high=0.9, align_pulses=True):
     """
     Analyze rise time, fall time, and pulse width of the mean signal.
     Handles both positive and negative pulses automatically.
     Uses only sampling rate from HDF5 metadata for timing calculations.
+    Aligns pulses by peak position before averaging for accurate timing.
     
     Args:
         ADC_df: pandas DataFrame where each row is an ADC pulse
@@ -332,6 +517,7 @@ def analyze_pulse_timing(ADC_df, sampling_rate, method='individual',
         method: normalization method ('individual', 'global', 'baseline')
         threshold_low: lower threshold for timing measurements (0.1 = 10%)
         threshold_high: upper threshold for timing measurements (0.9 = 90%)
+        align_pulses: whether to align pulses by peak before averaging
     
     Returns:
         timing_info: dictionary with timing analysis results
@@ -344,6 +530,15 @@ def analyze_pulse_timing(ADC_df, sampling_rate, method='individual',
     if sampling_rate is None or sampling_rate <= 0:
         print("No valid sampling rate available from HDF5 metadata - cannot perform timing analysis")
         return None
+    
+    # Align pulses by peak position for accurate averaging
+    if align_pulses:
+        print(f"Aligning {ADC_df.shape[0]} pulses for timing analysis...")
+        ADC_df, peak_positions = align_pulses_by_peak(ADC_df)
+        if ADC_df is None:
+            print("Failed to align pulses")
+            return None
+        print(f"  Peak positions found: min={peak_positions.min()}, max={peak_positions.max()}, median={int(np.median(peak_positions))}")
     
     # Calculate timing information from sampling rate
     sample_rate = sampling_rate
@@ -430,7 +625,22 @@ def analyze_pulse_timing(ADC_df, sampling_rate, method='individual',
     # Measure pulse width (works for both polarities)
     width_measurements = measure_pulse_width_universal(mean_pulse, mid_level, is_positive_pulse)
     timing_info.update(width_measurements)
-    
+
+    # Add nanosecond timing fields
+    tps = timing_info['time_per_sample']  # seconds per sample
+    if timing_info.get('rise_time') is not None:
+        timing_info['rise_time_ns'] = timing_info['rise_time'] * tps * 1e9
+    else:
+        timing_info['rise_time_ns'] = None
+    if timing_info.get('fall_time') is not None:
+        timing_info['fall_time_ns'] = timing_info['fall_time'] * tps * 1e9
+    else:
+        timing_info['fall_time_ns'] = None
+    if timing_info.get('pulse_width') is not None:
+        timing_info['pulse_width_ns'] = timing_info['pulse_width'] * tps * 1e9
+    else:
+        timing_info['pulse_width_ns'] = None
+
     return timing_info
 
 
@@ -701,7 +911,7 @@ def print_pulse_timing_info(timing_info, prefix="ADC"):
         print(f"  Mid level (50%): {timing_info['mid_level']:.4f}")
 
 
-def plot_pulse_timing_analysis(timing_info, prefix, save_plot=True):
+def plot_pulse_timing_analysis(timing_info, prefix, save_plot=True, folder_path='.'):
     """
     Plot the timing analysis with marked measurement points.
     
@@ -709,6 +919,7 @@ def plot_pulse_timing_analysis(timing_info, prefix, save_plot=True):
         timing_info: dictionary from analyze_pulse_timing()
         prefix: prefix for saving the plot
         save_plot: whether to save the plot
+        folder_path: folder to save the plot
     """
     
     if timing_info is None:
@@ -846,13 +1057,14 @@ def plot_pulse_timing_analysis(timing_info, prefix, save_plot=True):
     plt.tight_layout()
     
     if save_plot:
-        plt.savefig(f'{prefix}_pulse_timing_analysis.png', dpi=300, bbox_inches='tight')
-        print(f"Saved timing analysis plot: {prefix}_pulse_timing_analysis.png")
+        output_path = os.path.join(folder_path, f'{prefix}_pulse_timing_analysis.png')
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"Saved timing analysis plot: {output_path}")
     
     # plt.show()
 
 
-def plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=10000, normalize=True, norm_method='individual', show=False):
+def plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=10000, normalize=True, norm_method='individual', show=False, folder_path='.', align_pulses=True):
     """
     Create an advanced diagram with multiple views and statistics.
     
@@ -861,11 +1073,22 @@ def plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=10000, norm
         prefix: prefix for saving the plot
         alpha: transparency for individual pulses
         max_pulses: maximum number of pulses to plot
+        folder_path: folder to save the plot
+        align_pulses: whether to align pulses by peak position
     """
     
     if ADC_df is None:
         print("No ADC DataFrame available for advanced diagram")
         return
+    
+    # Align pulses by peak position first
+    if align_pulses:
+        print(f"Aligning {ADC_df.shape[0]} pulses by peak position...")
+        ADC_df, peak_positions = align_pulses_by_peak(ADC_df)
+        if ADC_df is None:
+            print("Failed to align pulses")
+            return
+        print(f"  Peak positions: min={peak_positions.min()}, max={peak_positions.max()}, median={int(np.median(peak_positions))}")
     
     ADC_df = normalize_pulses_to_max(ADC_df, method=norm_method) if normalize else ADC_df
     
@@ -930,19 +1153,21 @@ def plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=10000, norm
     ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(f'{prefix}_ADC_diagram_{"normalize" if normalize else "raw"}.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_ADC_diagram_{"normalize" if normalize else "raw"}.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.draw()
-    print(f"Saved advanced ADC diagram: {prefix}_ADC_diagram.png")
+    print(f"Saved advanced ADC diagram: {output_path}")
     if show:
         plt.show()
 
-def plot_adc_heatmap(ADC_df, prefix):
+def plot_adc_heatmap(ADC_df, prefix, folder_path='.'):
     """
     Create a heatmap of all ADC_df rows (channels) on a single plot.
     
     Args:
         ADC_df: pandas DataFrame with ADC data (each row is a channel)
         prefix: prefix for saving the plot
+        folder_path: folder to save the plot
     """
     
     if ADC_df is None:
@@ -975,18 +1200,20 @@ def plot_adc_heatmap(ADC_df, prefix):
         ax.set_yticks(y_ticks)
     
     plt.tight_layout()
-    plt.savefig(f'{prefix}_ADC_heatmap.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_ADC_heatmap.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     # plt.show()
-    print(f"Saved ADC heatmap: {prefix}_ADC_heatmap.png")
+    print(f"Saved ADC heatmap: {output_path}")
 
 
-def plot_adc_heatmap_advanced(ADC_df, prefix):
+def plot_adc_heatmap_advanced(ADC_df, prefix, folder_path='.'):
     """
     Create an advanced heatmap with statistics and multiple views of ADC data.
     
     Args:
         ADC_df: pandas DataFrame with ADC data
         prefix: prefix for saving the plot
+        folder_path: folder to save the plot
     """
     
     if ADC_df is None:
@@ -1039,18 +1266,38 @@ def plot_adc_heatmap_advanced(ADC_df, prefix):
     ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig(f'{prefix}_ADC_advanced_analysis.png', dpi=300, bbox_inches='tight')
+    output_path = os.path.join(folder_path, f'{prefix}_ADC_advanced_analysis.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
     # plt.show()
-    print(f"Saved advanced ADC analysis: {prefix}_ADC_advanced_analysis.png")
+    print(f"Saved advanced ADC analysis: {output_path}")
 
 
 def main():
     """
     Main demonstration function - processes HDF5 files only
     """
+    import argparse
+    import sys
     
-    # Look for HDF5 files
-    h5_files = [f for f in os.listdir('.') if f.endswith('.h5')]
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description='Analyze waveform data from HDF5 files')
+    parser.add_argument('folder', nargs='?', default='.',
+                        help='Folder path to process (default: current directory)')
+    args = parser.parse_args()
+    
+    # Use provided folder or current directory
+    folder_path = args.folder
+    
+    # Check if folder exists
+    if not os.path.isdir(folder_path):
+        print(f"Error: Folder '{folder_path}' does not exist.")
+        sys.exit(1)
+    
+    print(f"Processing files in: {os.path.abspath(folder_path)}")
+    
+    # Look for HDF5 files in the specified folder
+    h5_files = [f for f in os.listdir(folder_path) if f.endswith('.h5')]
     
     print(f"Found {len(h5_files)} HDF5 files")
     
@@ -1062,9 +1309,11 @@ def main():
     
     aggregate_results = []
     for h5_file in h5_files:
+        # Use full path for processing
+        full_path = os.path.join(folder_path, h5_file)
         print(f"Loading HDF5 file: {h5_file}")
         
-        ADC_df, timestamps_df, metadata = load_hdf5_data(h5_file)
+        ADC_df, timestamps_df, metadata = load_hdf5_data(full_path)
         
         if ADC_df is not None:
             prefix = os.path.splitext(h5_file)[0]
@@ -1073,9 +1322,10 @@ def main():
             print(f"ADC voltage scaling applied: {metadata.get('adc_voltage_scaling', 'Unknown')} V/count")
             
             # Run analysis with HDF5 data and collect results
-            timing_info = run_analysis(ADC_df, timestamps_df, prefix, metadata)
+            timing_info = run_analysis(ADC_df, timestamps_df, prefix, metadata, folder_path)
             if timing_info is not None:
                 # Store a minimal summary per file
+                # Build summary including run_info metadata
                 summary = {
                     'file': h5_file,
                     'prefix': prefix,
@@ -1090,8 +1340,23 @@ def main():
                     'rise_samples': int(timing_info.get('rise_time')) if timing_info.get('rise_time') is not None else -1,
                     'fall_samples': int(timing_info.get('fall_time')) if timing_info.get('fall_time') is not None else -1,
                     'width_samples': int(timing_info.get('pulse_width')) if timing_info.get('pulse_width') is not None else -1,
-                    'time_per_sample': float(timing_info.get('time_per_sample', np.nan))
+                    'time_per_sample': float(timing_info.get('time_per_sample', np.nan)),
+                    'rise_time_ns': float(timing_info.get('rise_time_ns')) if timing_info.get('rise_time_ns') is not None else np.nan,
+                    'fall_time_ns': float(timing_info.get('fall_time_ns')) if timing_info.get('fall_time_ns') is not None else np.nan,
+                    'pulse_width_ns': float(timing_info.get('pulse_width_ns')) if timing_info.get('pulse_width_ns') is not None else np.nan,
+                    'pmt_hv': int(metadata.get('pmt_hv')) if 'pmt_hv' in metadata else np.nan,
+                    'source': str(metadata.get('source')) if 'source' in metadata else '',
+                    'scintilator': str(metadata.get('scintilator')) if 'scintilator' in metadata else '',
+                    'trigger_threshold_common': float(metadata.get('trigger_threshold_common')) if 'trigger_threshold_common' in metadata else np.nan,
+                    'run_info_file': str(metadata.get('run_info_file')) if 'run_info_file' in metadata else ''
                 }
+                # Include per-channel thresholds dynamically
+                for k in list(metadata.keys()):
+                    if k.startswith('trigger_threshold_board'):
+                        try:
+                            summary[k] = float(metadata.get(k))
+                        except Exception:
+                            summary[k] = np.nan
                 aggregate_results.append({'summary': summary, 'timing_info': timing_info})
             
         else:
@@ -1099,12 +1364,13 @@ def main():
 
     # Save aggregate results to HDF5 if we have any
     if aggregate_results:
-        out_name = f"aggregate_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.h5"
+        out_name = os.path.join(folder_path, 
+                               f"aggregate_results_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.h5")
         save_aggregate_results_hdf5(aggregate_results, out_name)
         print(f"Saved aggregate results to {out_name}")
 
 
-def run_analysis(ADC_df, timestamps_df, prefix, metadata=None):
+def run_analysis(ADC_df, timestamps_df, prefix, metadata=None, folder_path='.'):
     """
     Run the complete analysis pipeline on loaded HDF5 data.
     
@@ -1113,6 +1379,7 @@ def run_analysis(ADC_df, timestamps_df, prefix, metadata=None):
         timestamps_df: Event timestamps DataFrame
         prefix: File prefix for saving outputs
         metadata: Metadata dictionary from HDF5 (required for timing analysis)
+        folder_path: Folder to save output plots
     """
     
     # Demonstrate operations
@@ -1131,10 +1398,10 @@ def run_analysis(ADC_df, timestamps_df, prefix, metadata=None):
     # plot_adc_diagram_normalized(ADC_df, prefix, normalize=True, 
     #                           norm_method='baseline', alpha=0.1, max_pulses=500)
     
-    # Advanced analysis
-    # plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, normalize=False)
-    plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=1000, 
-                             normalize=True, norm_method='individual')
+    # Advanced analysis with pulse alignment
+    # plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, normalize=False, folder_path=folder_path, align_pulses=True)
+    plot_adc_diagram_advanced(ADC_df, prefix, alpha=0.05, max_pulses=1000,
+                             normalize=True, norm_method='individual', folder_path=folder_path, align_pulses=True)
     
     # Analyze pulse timing characteristics
     print(f"\nAnalyzing pulse timing for {prefix}...")
@@ -1152,11 +1419,12 @@ def run_analysis(ADC_df, timestamps_df, prefix, metadata=None):
             ADC_df, sampling_rate,
             method='individual',
             threshold_low=0.1,
-            threshold_high=0.9)
+            threshold_high=0.9,
+            align_pulses=True)
     
     if timing_info is not None:
         print_pulse_timing_info(timing_info, prefix=prefix)
-        plot_pulse_timing_analysis(timing_info, prefix, save_plot=True)
+        plot_pulse_timing_analysis(timing_info, prefix, save_plot=True, folder_path=folder_path)
 
     # Return timing_info for aggregation (None if not available)
     return timing_info
