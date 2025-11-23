@@ -26,6 +26,26 @@ __all__ = [
 ]
 
 
+def calculate_time_axis(n_samples, sampling_rate=None):
+    """Calculate time axis for plotting.
+    
+    Args:
+        n_samples: Number of samples
+        sampling_rate: Sampling rate in Hz (if None, returns sample indices)
+        
+    Returns:
+        tuple: (x_axis, x_label) where x_axis is array and x_label is string
+    """
+    if sampling_rate is not None:
+        time_per_sample = 1.0 / sampling_rate
+        x_axis = np.arange(n_samples) * time_per_sample * 1e9  # Convert to ns
+        x_label = 'Time (ns)'
+    else:
+        x_axis = np.arange(n_samples)
+        x_label = 'Sample Points'
+    return x_axis, x_label
+
+
 def plot_adc_overlay(
     ADC_df,
     prefix,
@@ -33,6 +53,7 @@ def plot_adc_overlay(
     max_pulses=None,
     folder_path='.',
     sampling_rate=None,
+    metadata=None,
 ):
     """Plot all ADC pulses overlaid (oscilloscope-style diagram).
 
@@ -43,6 +64,7 @@ def plot_adc_overlay(
         max_pulses: maximum number of pulses to plot (None = all)
         folder_path: folder to save the plot
         sampling_rate: sampling rate in Hz (if None, uses sample points)
+        metadata: metadata dictionary with scintilator, source, pmt_hv
     """
     if ADC_df is None or ADC_df.empty:
         print("No ADC DataFrame available for overlay")
@@ -57,13 +79,7 @@ def plot_adc_overlay(
     n_samples = ADC_df.shape[1]
     
     # Calculate time axis
-    if sampling_rate is not None:
-        time_per_sample = 1.0 / sampling_rate
-        x_axis = np.arange(n_samples) * time_per_sample * 1e9  # Convert to ns
-        x_label = 'Time (ns)'
-    else:
-        x_axis = np.arange(n_samples)
-        x_label = 'Sample Points'
+    x_axis, x_label = calculate_time_axis(n_samples, sampling_rate)
 
     # Plot all pulses overlaid
     for i in range(n_pulses):
@@ -87,12 +103,35 @@ def plot_adc_overlay(
 
     ax.set_xlabel(x_label)
     ax.set_ylabel('ADC Values')
-    ax.set_title(f'ADC Overlay - {n_pulses} Pulses')
+    
+    # Build title with metadata
+    title = f'ADC Overlay - {n_pulses} Pulses'
+    if metadata:
+        meta_parts = []
+        if metadata.get('scintilator'):
+            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('source'):
+            meta_parts.append(f"Source: {metadata['source']}")
+        if metadata.get('pmt_hv'):
+            meta_parts.append(f"HV: {metadata['pmt_hv']}V")
+        if meta_parts:
+            title += '\n' + ', '.join(meta_parts)
+    ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    output_path = os.path.join(folder_path, f'{prefix}_ADC_overlay.png')
+    
+    # Build filename with metadata
+    filename_parts = [prefix, 'overlay']
+    if metadata:
+        if metadata.get('scintilator'):
+            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('source'):
+            filename_parts.append(str(metadata['source']).replace(' ', '_'))
+        if metadata.get('pmt_hv'):
+            filename_parts.append(f"{metadata['pmt_hv']}V")
+    output_path = os.path.join(folder_path, '_'.join(filename_parts) + '.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Saved ADC overlay: {output_path}")
@@ -108,6 +147,7 @@ def plot_adc_diagram_advanced(
     folder_path='.',
     align_data=True,
     sampling_rate=None,
+    metadata=None,
 ):
     """Create advanced diagram with multiple views and statistics.
 
@@ -121,6 +161,7 @@ def plot_adc_diagram_advanced(
         folder_path: folder to save the plot
         align_data: whether to align pulses by peak position
         sampling_rate: sampling rate in Hz (if None, uses sample points)
+        metadata: metadata dictionary with scintilator, source, pmt_hv
     """
     if ADC_df is None:
         print("No ADC DataFrame available for advanced diagram")
@@ -143,7 +184,20 @@ def plot_adc_diagram_advanced(
         ADC_df = normalize_pulses_to_max(ADC_df, method=norm_method)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-    fig.suptitle(f'ADC Diagram Analysis: {prefix}', fontsize=16)
+    
+    # Build title with metadata
+    title = f'ADC Diagram Analysis: {prefix}'
+    if metadata:
+        meta_parts = []
+        if metadata.get('scintilator'):
+            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('source'):
+            meta_parts.append(f"Source: {metadata['source']}")
+        if metadata.get('pmt_hv'):
+            meta_parts.append(f"HV: {metadata['pmt_hv']}V")
+        if meta_parts:
+            title += '\n' + ', '.join(meta_parts)
+    fig.suptitle(title, fontsize=16)
 
     n_pulses = (
         min(ADC_df.shape[0], max_pulses) if max_pulses else ADC_df.shape[0]
@@ -151,13 +205,7 @@ def plot_adc_diagram_advanced(
     n_samples = ADC_df.shape[1]
     
     # Calculate time axis
-    if sampling_rate is not None:
-        time_per_sample = 1.0 / sampling_rate
-        x_axis = np.arange(n_samples) * time_per_sample * 1e9  # Convert to ns
-        x_label = 'Time (ns)'
-    else:
-        x_axis = np.arange(n_samples)
-        x_label = 'Sample Points'
+    x_axis, x_label = calculate_time_axis(n_samples, sampling_rate)
 
     # Plot 1: All pulses overlaid (eye diagram)
     ax1 = axes[0, 0]
@@ -241,9 +289,17 @@ def plot_adc_diagram_advanced(
 
     plt.tight_layout()
     norm_suffix = 'normalized' if normalize else 'raw'
-    output_path = os.path.join(
-        folder_path, f'{prefix}_ADC_diagram_{norm_suffix}.png'
-    )
+    
+    # Build filename with metadata
+    filename_parts = [prefix, 'adv', norm_suffix]
+    if metadata:
+        if metadata.get('scintilator'):
+            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('source'):
+            filename_parts.append(str(metadata['source']).replace(' ', '_'))
+        if metadata.get('pmt_hv'):
+            filename_parts.append(f"{metadata['pmt_hv']}V")
+    output_path = os.path.join(folder_path, '_'.join(filename_parts) + '.png')
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Saved advanced ADC diagram: {output_path}")
@@ -254,6 +310,7 @@ def plot_pulse_timing_analysis(
     prefix,
     save_plot=True,
     folder_path='.',
+    metadata=None,
 ):
     """Plot timing analysis with marked measurement points.
 
@@ -262,6 +319,7 @@ def plot_pulse_timing_analysis(
         prefix: prefix for saving the plot
         save_plot: whether to save the plot
         folder_path: folder to save the plot
+        metadata: metadata dictionary with scintilator, source, pmt_hv
     """
     if timing_info is None:
         print("No timing information available for plotting")
@@ -270,19 +328,13 @@ def plot_pulse_timing_analysis(
     fig, ax = plt.subplots(1, 1, figsize=(14, 8))
 
     mean_pulse = timing_info['mean_pulse']
-    x_axis = np.arange(len(mean_pulse))
+    n_samples = len(mean_pulse)
 
-    # Use time axis if available
-    has_time_data = timing_info.get('has_time_data', False)
-    time_axis_data = timing_info.get('time_axis')
-    if has_time_data and time_axis_data is not None:
-        x_plot = time_axis_data * 1e9  # Convert seconds to nanoseconds
-        x_label = 'Time (ns)'
-        title_suffix = ''
-    else:
-        x_plot = x_axis
-        x_label = 'Sample Points'
-        title_suffix = ' (Sample Index)'
+    # Calculate time axis using sampling rate from timing_info
+    sampling_rate = timing_info.get('sampling_rate')
+    x_plot, x_label = calculate_time_axis(n_samples, sampling_rate)
+    
+    title_suffix = '' if sampling_rate else ' (Sample Index)'
 
     # Plot the mean pulse
     ax.plot(x_plot, mean_pulse, 'b-', linewidth=2, label='Mean Pulse')
@@ -313,19 +365,23 @@ def plot_pulse_timing_analysis(
 
     def get_x_coordinate(index):
         """Convert sample index to x-coordinate (time or sample)"""
-        if has_time_data and time_axis_data is not None:
-            return time_axis_data[index] * 1e9  # Convert to nanoseconds
+        # Use the calculated time axis from x_plot
+        if sampling_rate is not None and 0 <= index < len(x_plot):
+            return x_plot[index]
+        # No sampling rate - use sample indices directly
         return index
 
     def format_annotation(timing_samples, kind=None):
         """Format annotation text with time units in nanoseconds"""
         # Prefer *_ns values from timing_info if available
-        if kind and timing_info.get(f'{kind}_ns') is not None:
-            return f"{timing_info[f'{kind}_ns']:.1f} ns"
-        # Otherwise, try to convert from seconds
-        if has_time_data and timing_info.get('time_per_sample') is not None:
-            time_sec = timing_samples * timing_info['time_per_sample']
-            return f"{time_sec*1e9:.1f} ns"
+        ns_key = f'{kind}_ns' if kind else None
+        if ns_key and ns_key in timing_info and timing_info[ns_key] is not None:
+            return f"{timing_info[ns_key]:.1f} ns"
+        # Otherwise, try to convert using sampling_rate
+        if sampling_rate is not None and sampling_rate > 0:
+            time_ns = timing_samples * (1.0 / sampling_rate) * 1e9
+            return f"{time_ns:.1f} ns"
+        # No sampling rate - show samples
         return f"{timing_samples} samples"
 
     # Mark rise time
@@ -401,16 +457,36 @@ def plot_pulse_timing_analysis(
 
     ax.set_xlabel(x_label)
     ax.set_ylabel('Normalized ADC Values')
-    ax.set_title(f'Pulse Timing Analysis - {prefix}{title_suffix}')
+    
+    # Build title with metadata
+    title = f'Pulse Timing Analysis - {prefix}{title_suffix}'
+    if metadata:
+        meta_parts = []
+        if metadata.get('scintilator'):
+            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('source'):
+            meta_parts.append(f"Source: {metadata['source']}")
+        if metadata.get('pmt_hv'):
+            meta_parts.append(f"HV: {metadata['pmt_hv']}V")
+        if meta_parts:
+            title += '\n' + ', '.join(meta_parts)
+    ax.set_title(title)
     ax.legend()
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
 
     if save_plot:
-        output_path = os.path.join(
-            folder_path, f'{prefix}_pulse_timing_analysis.png'
-        )
+        # Build filename with metadata
+        filename_parts = [prefix, 'time']
+        if metadata:
+            if metadata.get('scintilator'):
+                filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+            if metadata.get('source'):
+                filename_parts.append(str(metadata['source']).replace(' ', '_'))
+            if metadata.get('pmt_hv'):
+                filename_parts.append(f"{metadata['pmt_hv']}V")
+        output_path = os.path.join(folder_path, '_'.join(filename_parts) + '.png')
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Saved timing analysis plot: {output_path}")
@@ -418,9 +494,10 @@ def plot_pulse_timing_analysis(
     # Create a separate zoomed-in plot around the pulse peak
     peak_idx = timing_info['peak_idx']
     window_samples = 20
-    if has_time_data and time_axis_data is not None:
-        time_per_sample = (time_axis_data[1] - time_axis_data[0]) * 1e9
-        window_ns = 6  # ns
+    if sampling_rate is not None:
+        # Calculate window in samples for ~6 ns window
+        time_per_sample = 1.0 / sampling_rate
+        window_ns = 6e-9  # 6 ns in seconds
         window = int(window_ns / time_per_sample)
     else:
         window = window_samples
@@ -430,7 +507,20 @@ def plot_pulse_timing_analysis(
     ax_zoom.plot(x_plot[start:end], mean_pulse[start:end], 'b-', linewidth=2)
     ax_zoom.set_xlabel(x_label)
     ax_zoom.set_ylabel('Normalized ADC Values')
-    ax_zoom.set_title(f'Pulse Timing Zoom - {prefix}')
+    
+    # Build title with metadata
+    zoom_title = f'Pulse Timing Zoom - {prefix}'
+    if metadata:
+        meta_parts = []
+        if metadata.get('scintilator'):
+            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('source'):
+            meta_parts.append(f"Source: {metadata['source']}")
+        if metadata.get('pmt_hv'):
+            meta_parts.append(f"HV: {metadata['pmt_hv']}V")
+        if meta_parts:
+            zoom_title += '\n' + ', '.join(meta_parts)
+    ax_zoom.set_title(zoom_title)
     ax_zoom.grid(True, alpha=0.3)
 
     # Add scatter points and annotations for rise, fall, width
@@ -471,7 +561,17 @@ def plot_pulse_timing_analysis(
                         xytext=(0, 15), textcoords='offset points',
                         bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgreen', alpha=0.7))
     plt.tight_layout()
-    output_zoom_path = os.path.join(folder_path, f'{prefix}_pulse_timing_zoom.png')
+    
+    # Build filename with metadata
+    filename_parts = [prefix, 'time_zoom']
+    if metadata:
+        if metadata.get('scintilator'):
+            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('source'):
+            filename_parts.append(str(metadata['source']).replace(' ', '_'))
+        if metadata.get('pmt_hv'):
+            filename_parts.append(f"{metadata['pmt_hv']}V")
+    output_zoom_path = os.path.join(folder_path, '_'.join(filename_parts) + '.png')
     plt.savefig(output_zoom_path, dpi=300, bbox_inches='tight')
     plt.close(fig_zoom)
     print(f"Saved timing zoom plot: {output_zoom_path}")
@@ -485,6 +585,7 @@ def plot_waveform_analysis(
     normalize=True,
     norm_method='individual',
     align_data=True,
+    plot_overlay=False,
 ):
     """Complete waveform analysis with all plots for a single HDF5 file.
 
@@ -496,6 +597,7 @@ def plot_waveform_analysis(
         normalize: Whether to normalize pulses
         norm_method: Normalization method
         align_data: Whether to align pulses by peak
+        plot_overlay: Whether to create ADC overlay plot
     """
     print(f"\nAnalyzing: {os.path.basename(hdf5_file)}")
 
@@ -518,6 +620,19 @@ def plot_waveform_analysis(
     if metadata:
         print(f"Sampling rate: {metadata.get('sampling_rate', 'Unknown')} Hz")
 
+    # Create overlay plot if requested
+    if plot_overlay:
+        print(f"Creating ADC overlay plot for {prefix}...")
+        plot_adc_overlay(
+            ADC_df,
+            prefix,
+            alpha=alpha,
+            max_pulses=max_pulses,
+            folder_path=output_folder,
+            sampling_rate=sampling_rate,
+            metadata=metadata,
+        )
+
     # Create advanced diagram
     plot_adc_diagram_advanced(
         ADC_df,
@@ -529,7 +644,9 @@ def plot_waveform_analysis(
         folder_path=output_folder,
         align_data=align_data,
         sampling_rate=sampling_rate,
+        metadata=metadata,
     )
+
 
     # Analyze pulse timing
     if sampling_rate:
@@ -561,7 +678,8 @@ def plot_waveform_analysis(
 
             # Plot timing analysis
             plot_pulse_timing_analysis(
-                timing_info, prefix, save_plot=True, folder_path=output_folder
+                timing_info, prefix, save_plot=True, folder_path=output_folder,
+                metadata=metadata
             )
 
             return timing_info
@@ -610,6 +728,11 @@ def main():
         action='store_true',
         help='Skip pulse alignment',
     )
+    parser.add_argument(
+        '--overlay',
+        action='store_true',
+        help='Create ADC overlay plot',
+    )
     args = parser.parse_args()
 
     if not os.path.isdir(args.folder):
@@ -640,6 +763,7 @@ def main():
             normalize=not args.no_normalize,
             norm_method=args.norm_method,
             align_data=not args.no_align,
+            plot_overlay=args.overlay,
         )
 
     print(f"\nPlotting complete. Output saved to {args.folder}")

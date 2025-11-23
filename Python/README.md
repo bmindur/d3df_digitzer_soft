@@ -15,6 +15,7 @@ CAEN DT5743 waveform CSV (Wave_0_0.txt) to HDF5 converter, analysis, and plottin
   - Statistical pulse diagrams (mean, std, envelope)
   - Pulse timing analysis with annotated rise/fall/width (in ns)
   - **Zoomed-in pulse timing plots** with all timing markers
+  - **Timing vs HV plots** - Plot rise/fall/width time as function of PMT HV grouped by source and scintillator
 - All plots use nanoseconds (ns) for time axis.
 
 ## Directory Structure
@@ -27,6 +28,7 @@ Python/
     converter.py
     analysis.py
     plot_analysis.py
+    plot_timing_vs_hv.py
     dsa_converter.py
     caen_hv.py
 ```
@@ -46,6 +48,7 @@ After installation, the following console scripts are available:
 - `convert-dt5743` — Convert CSV to HDF5
 - `analyze-dt-hdf` — Analyze HDF5 files (timing, normalization, etc.)
 - `plot-analysis` — Generate all analysis and timing plots
+- `plot-timing-vs-hv` — Plot timing parameters vs PMT HV from analysis results
 - `caen-hv` — Control CAEN HV via serial
 
 ### Example: Convert and plot
@@ -55,14 +58,24 @@ analyze-dt-hdf data_output
 plot-analysis data_output
 ```
 
+### Example: Plot timing vs HV
+After running `analyze-dt-hdf`, use the generated `analysis_results_*.h5` file:
+```powershell
+plot-timing-vs-hv analysis_results_20251123_120000.h5
+# Or auto-detect the most recent file:
+plot-timing-vs-hv
+```
+This creates plots showing rise/fall/width time (ns) vs PMT HV, grouped by source and scintillator.
+
 ### Plotting options
 ```powershell
-plot-analysis <folder> [--alpha 0.05] [--max-pulses 1000] [--no-normalize] [--norm-method individual|global|baseline] [--no-align]
+plot-analysis <folder> [--alpha 0.05] [--max-pulses 1000] [--no-normalize] [--norm-method individual|global|baseline] [--no-align] [--overlay]
 ```
 - Generates PNGs for each HDF5 file:
   - `<prefix>_ADC_diagram_normalized.png` — All pulses, mean, std envelope
   - `<prefix>_pulse_timing_analysis.png` — Pulse timing with annotated rise/fall/width (ns)
   - `<prefix>_pulse_timing_zoom.png` — **Zoomed-in timing plot** with all timing markers and scatter points
+  - `<prefix>_ADC_overlay.png` — Overlaid pulses (with `--overlay` flag)
 
 ## Python API
 ```python

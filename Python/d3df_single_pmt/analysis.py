@@ -226,7 +226,7 @@ def analyze_pulse_timing(ADC_df, sampling_rate, method='individual', threshold_l
     info = {
         'baseline': baseline, 'peak': peak, 'amplitude': amp, 'is_positive_pulse': positive, 'peak_idx': peak_idx,
         'threshold_low': threshold_low, 'threshold_high': threshold_high, 'low_level': low, 'high_level': high,
-        'mid_level': mid, 'mean_pulse': mean_pulse, 'time_per_sample': tps, 'sample_rate': sampling_rate
+        'mid_level': mid, 'mean_pulse': mean_pulse, 'time_per_sample': tps, 'sampling_rate': sampling_rate
     }
     info.update(_measure_rise_positive(mean_pulse, low, high) if positive else _measure_rise_negative(mean_pulse, low, high))
     info.update(_measure_fall_positive(mean_pulse, low, high, peak_idx) if positive else _measure_fall_negative(mean_pulse, low, high, peak_idx))
