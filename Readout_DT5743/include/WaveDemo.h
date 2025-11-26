@@ -478,6 +478,11 @@ typedef struct {
 	int TspectrumMode;  // Timing spectrum (TAC): 0=start-stop, 1=intervals (time difference between consecutive events)
 
 	int TriggerFix;
+
+	// Batch mode parameters
+	int BatchMode;          // 0=interactive (default), 1=batch with visualization, 2=batch without visualization
+	uint64_t BatchMaxEvents; // Maximum number of events to record (0=unlimited)
+	uint64_t BatchMaxTime;   // Maximum time in seconds (0=unlimited)
 } WaveDemoConfig_t;
 
 typedef struct {
@@ -519,6 +524,10 @@ typedef struct {
 	int Restart;
 	FILE *flist_merged;
 	FILE *OutputDataFile;
+
+	// Batch mode runtime variables
+	uint64_t BatchStartTime;    // Start time for batch mode in ms
+	uint64_t BatchEventsTotal;  // Total events processed in batch mode
 } WaveDemoRun_t;
 
 //****************************************************************************

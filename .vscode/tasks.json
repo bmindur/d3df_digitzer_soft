@@ -1,0 +1,74 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build WaveDemo_x743 (Release)",
+            "type": "shell",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "args": [
+                "${workspaceFolder}\\Readout_DT5743\\build\\WaveDemo_x743.sln",
+                "/p:Configuration=Release",
+                "/p:Platform=x64"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Build WaveDemo_x743 (Debug)",
+            "type": "shell",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "args": [
+                "${workspaceFolder}\\Readout_DT5743\\build\\WaveDemo_x743.sln",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64"
+            ],
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Clean WaveDemo_x743",
+            "type": "shell",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "args": [
+                "${workspaceFolder}\\Readout_DT5743\\build\\WaveDemo_x743.sln",
+                "/t:Clean",
+                "/p:Configuration=Release",
+                "/p:Platform=x64"
+            ],
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Rebuild WaveDemo_x743 (Release)",
+            "type": "shell",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "args": [
+                "${workspaceFolder}\\Readout_DT5743\\build\\WaveDemo_x743.sln",
+                "/t:Rebuild",
+                "/p:Configuration=Release",
+                "/p:Platform=x64"
+            ],
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}

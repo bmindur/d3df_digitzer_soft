@@ -160,6 +160,11 @@ void SetDefaultConfiguration(WaveDemoConfig_t *WDcfg) {
 	WDcfg->TOFstartChannel = 0;
 	WDcfg->TriggerFix = 20;
 
+	// Batch mode defaults
+	WDcfg->BatchMode = 0;           // 0 = interactive mode (default)
+	WDcfg->BatchMaxEvents = 0;      // 0 = unlimited
+	WDcfg->BatchMaxTime = 0;        // 0 = unlimited
+
 	for (int b = 0; b < MAX_BD; b++) {
 		// get pointer to substructure
 		WaveDemoBoard_t *WDb = &WDcfg->boards[b];
@@ -392,6 +397,22 @@ static int parseOptions(const char* name, const char* value, WaveDemoConfig_t* W
 			printf("%s: invalid setting for %s\n", value, name);
 			return 0;
 		}
+	}
+
+	// Batch mode settings
+	if (strcmp(name, "BATCH_MODE") == 0) {
+		val = GetIntValueDefault(name, value, 0);
+		if (val < 0 || val > 2) {
+			printf("%s: invalid setting for %s (valid values: 0=interactive, 1=batch with visualization, 2=batch without visualization)\n", value, name);
+			return 0;
+		}
+		WDcfg->BatchMode = val;
+	}
+	if (strcmp(name, "BATCH_MAX_EVENTS") == 0) {
+		WDcfg->BatchMaxEvents = (uint64_t)GetIntValueDefault(name, value, 0);
+	}
+	if (strcmp(name, "BATCH_MAX_TIME") == 0) {
+		WDcfg->BatchMaxTime = (uint64_t)GetIntValueDefault(name, value, 0);
 	}
 
 	return 1;

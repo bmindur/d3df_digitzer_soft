@@ -2312,6 +2312,73 @@ void PrintStatistics() {
 	printf("\n\n");
 }
 
+
+/*!
+ * \fn	int CheckBatchModeConditions(WaveDemoRun_t *WDrun, WaveDemoConfig_t *WDcfg)
+ *
+ * \brief	Check if batch mode termination conditions are met (time limit or event count limit).
+ *          Returns 0 to stop acquisition, -1 to continue.
+ *
+ * \param [in,out]	WDrun	Pointer to the WaveDemoRun_t data structure.
+ * \param [in,out]	WDcfg	Pointer to the WaveDemoConfig_t data structure.
+ *
+ * \return	0 to stop acquisition, -1 to continue.
+ */
+
+int CheckBatchModeConditions(WaveDemoRun_t *WDrun, WaveDemoConfig_t *WDcfg) {
+	// If not in batch mode, continue normally
+	if (WDcfg->BatchMode == 0)
+		return -1;
+
+	// Calculate total events across all boards and channels
+	uint64_t totalEvents = 0;
+	for (int b = 0; b < WDcfg->NumBoards; b++) {
+		for (int ch = 0; ch < WDcfg->handles[b].Nch; ch++) {
+			totalEvents += WDstats.EvProcessed_cnt[b][ch];
+		}
+	}
+	WDrun->BatchEventsTotal = totalEvents;
+
+	// Check event count condition
+	if (WDcfg->BatchMaxEvents > 0 && totalEvents >= WDcfg->BatchMaxEvents) {
+		printf("\nBatch mode: Maximum event count reached (%llu events)\n", 
+			(unsigned long long)WDcfg->BatchMaxEvents);
+		msg_printf(MsgLog, "INFO: Batch mode stopped - Maximum event count reached (%llu events)\n", 
+			(unsigned long long)WDcfg->BatchMaxEvents);
+		WDrun->AcqRun = 0;
+		return 0;
+	}
+
+	// Check time condition
+	if (WDcfg->BatchMaxTime > 0) {
+		uint64_t currentTime = get_time();
+		uint64_t elapsedSeconds = (currentTime - WDrun->BatchStartTime) / 1000;
+		
+		if (elapsedSeconds >= WDcfg->BatchMaxTime) {
+			printf("\nBatch mode: Maximum time reached (%llu seconds)\n", 
+				(unsigned long long)WDcfg->BatchMaxTime);
+			msg_printf(MsgLog, "INFO: Batch mode stopped - Maximum time reached (%llu seconds)\n", 
+				(unsigned long long)WDcfg->BatchMaxTime);
+			WDrun->AcqRun = 0;
+			return 0;
+		}
+
+		// Print progress every 10 seconds
+		if (elapsedSeconds % 10 == 0 && elapsedSeconds > 0) {
+			static uint64_t lastPrintTime = 0;
+			if (elapsedSeconds != lastPrintTime) {
+				printf("Batch mode progress: %llu/%llu seconds, %llu events\n",
+					(unsigned long long)elapsedSeconds,
+					(unsigned long long)WDcfg->BatchMaxTime,
+					(unsigned long long)totalEvents);
+				lastPrintTime = elapsedSeconds;
+			}
+		}
+	}
+
+	return -1; // Continue acquisition
+}
+
 /* ########################################################################### */
 /* MAIN                                                                        */
 /* ########################################################################### */
@@ -2514,10 +2581,44 @@ Restart:
 
 	msg_printf(MsgLog, "INFO: Ready.\n");
 	printf("\n");
-	if (WDrun.Restart && WDrun.AcqRun)
+	
+	// Batch mode: start acquisition automatically
+	if (WDcfg.BatchMode > 0) {
+		// Force SaveRunInfo in batch mode
+		WDcfg.SaveRunInfo = 1;
+		
+		printf("========================================\n");
+		printf("BATCH MODE ENABLED (Mode %d)\n", WDcfg.BatchMode);
+		printf("========================================\n");
+		if (WDcfg.BatchMaxEvents > 0)
+			printf("  Maximum events: %llu\n", (unsigned long long)WDcfg.BatchMaxEvents);
+		else
+			printf("  Maximum events: UNLIMITED\n");
+		if (WDcfg.BatchMaxTime > 0)
+			printf("  Maximum time: %llu seconds\n", (unsigned long long)WDcfg.BatchMaxTime);
+		else
+			printf("  Maximum time: UNLIMITED\n");
+		if (WDcfg.BatchMode == 2)
+			printf("  Visualization: DISABLED\n");
+		else
+			printf("  Visualization: ENABLED\n");
+		printf("  Output path: %s\n", WDcfg.DataFilePath);
+		printf("========================================\n");
+		printf("\n");
+		
+		WDrun.BatchStartTime = get_time();
+		WDrun.BatchEventsTotal = 0;
 		StartAcquisition(&WDcfg);
-	else
+		WDrun.AcqRun = 1;
+		printf("Acquisition started automatically (batch mode)\n");
+	}
+	else if (WDrun.Restart && WDrun.AcqRun) {
+		StartAcquisition(&WDcfg);
+	}
+	else {
 		printf("[s] start/stop the acquisition, [q] quit, [?] help\n");
+	}
+	
 	WDrun.Quit = 0;
 	WDrun.Restart = 0;
 	//PrevRateTime = get_time();
@@ -2525,10 +2626,43 @@ Restart:
 	/* Readout Loop                                                                            */
 	/* *************************************************************************************** */
 	while (!WDrun.Quit) {
-		// Check for keyboard commands (key pressed)
-		if (CheckKeyboardCommands(&WDrun, &WDcfg) == 0) {
-			SLEEP(40); //pause to see messages displayed
+		// Check for keyboard commands (key pressed) - skip in batch mode without visualization
+		if (WDcfg.BatchMode != 2) {
+			if (CheckKeyboardCommands(&WDrun, &WDcfg) == 0) {
+				SLEEP(40); //pause to see messages displayed
+			}
 		}
+		
+		// Check batch mode conditions (time and event limits)
+		if (WDcfg.BatchMode > 0 && WDrun.AcqRun) {
+			if (CheckBatchModeConditions(&WDrun, &WDcfg) == 0) {
+				// Batch mode termination condition met - stop acquisition
+				StopAcquisition(&WDcfg);
+				
+				// Print final statistics and file information
+				printf("\n");
+				printf("========================================\n");
+				printf("BATCH MODE COMPLETED\n");
+				printf("========================================\n");
+				if (WDcfg.enableStats) {
+					UpdateStatistics(get_time());
+					PrintStatistics();
+				}
+				if (WDcfg.SaveRunInfo)
+					SaveRunInfo(ConfigFileName);
+				if (WDcfg.SaveHistograms)
+					SaveAllHistograms();
+				CloseOutputDataFiles();
+				
+				printf("\n");
+				printf("Output files saved in: %s\n", WDcfg.DataFilePath);
+				printf("========================================\n");
+				
+				WDrun.Quit = 1; // Exit the loop
+				continue;
+			}
+		}
+		
 		if (WDrun.Restart) {
 			// reload configurations from config file
 			f_ini = fopen(ConfigFileName, "r");
@@ -2586,8 +2720,34 @@ Restart:
 				ErrCode = ERR_OUTFILE_WRITE;
 				goto QuitProgram;
 			}
-			// Open the plotters
-			if (WDPlotVar == NULL) {
+			
+			// Print output file information in batch mode
+			if (WDcfg.BatchMode > 0) {
+				char fname[200];
+				printf("\n");
+				printf("Output files being created:\n");
+				if (WDcfg.SaveRawData) {
+					printf("  - Raw data file\n");
+				}
+				if (WDcfg.SaveTDCList) {
+					printf("  - TDC list files\n");
+				}
+				if (WDcfg.SaveWaveforms) {
+					printf("  - Waveform files\n");
+				}
+				if (WDcfg.SaveLists) {
+					printf("  - List files\n");
+				}
+				if (WDcfg.SaveHistograms) {
+					printf("  - Histogram files\n");
+				}
+				printf("  - Run info file\n");
+				printf("All files in: %s\n", WDcfg.DataFilePath);
+				printf("\n");
+			}
+			
+			// Open the plotters (skip if batch mode without visualization)
+			if (WDPlotVar == NULL && WDcfg.BatchMode != 2) {
 				printf("*** Plotters initializing...\n");
 				//waveforms plot
 				WDPlotVar = OpenPlotter(WDcfg.GnuPlotPath, MAX_NUM_TRACES, WDcfg.GlobalRecordLength);
@@ -2604,7 +2764,8 @@ Restart:
 			ResetHistograms();
 			memset(PrevChTimeStamp, 0, sizeof(float) * MAX_CH * MAX_BD);
 
-			printf("Press [?] for help\n");
+			if (WDcfg.BatchMode == 0)
+				printf("Press [?] for help\n");
 			msg_printf(MsgLog, "INFO: Starting Acquisition at %s\n", WDstats.AcqStartTimeString);
 			AcqRunGoFlag = 1;
 		}
@@ -2638,31 +2799,33 @@ Restart:
 
 		/* Update statistics and print them onto the screen (once every second) */
 		ElapsedTime = CurrentTime - PrevLogTime; // in ms
-		if (WDcfg.enableStats) {
-			if (ElapsedTime > 1000 && (WDrun.DoRefresh || WDrun.DoRefreshSingle)) {
+		if (WDcfg.enableStats || WDcfg.BatchMode > 0) {
+			if (ElapsedTime > 1000 && (WDrun.DoRefresh || WDrun.DoRefreshSingle || WDcfg.BatchMode > 0)) {
 				if (ForceStatUpdate || ((CurrentTime - PrevStatTime) > WDcfg.StatUpdateTime)) {
 					UpdateStatistics(CurrentTime);
 					PrevStatTime = CurrentTime;
 					ForceStatUpdate = 0;
 				}
 				if (WDrun.StatsMode < 0) {
-					ComputeThroughput(&WDcfg, &WDrun, ElapsedTime);
+					if (WDcfg.BatchMode != 2) { // Print throughput except in batch mode 2
+						ComputeThroughput(&WDcfg, &WDrun, ElapsedTime);
+					}
 				}
-				else {
+				else if (WDcfg.BatchMode == 1) { // Print statistics in batch mode 1
 					PrintStatistics();
 				}
 				PrevLogTime = CurrentTime;
 				WDrun.DoRefreshSingle = 0;
 				print_warn_stats_off = 1;
 			}
-			else if (!WDrun.DoRefresh && print_warn_stats_off) {
+			else if (!WDrun.DoRefresh && print_warn_stats_off && WDcfg.BatchMode == 0) {
 				printf("Statistics refresh is disabled; press 'f' to enable or 'o' for single shots!\n");
 				print_warn_stats_off = 0;
 			}
 		}
 
-		/* Plot histogram */
-		if (ElapsedTime > 1000 && WDrun.HistoPlotType != HPLOT_DISABLED) {
+		/* Plot histogram (skip in batch mode without visualization) */
+		if (ElapsedTime > 1000 && WDrun.HistoPlotType != HPLOT_DISABLED && WDcfg.BatchMode != 2) {
 			PlotSelectedHisto(WDrun.HistoPlotType, WDrun.Xunits);
 		}
 
