@@ -42,4 +42,11 @@ void SetDefaultConfiguration(WaveDemoConfig_t *WDcfg);
 */
 int ParseConfigFile(FILE* f_ini, WaveDemoConfig_t* WDcfg);
 
+/*! \fn      void NormalizeDataFilePath(char* path)
+*   \brief   Ensure the data file path ends with a path separator
+*
+*   \param   path        Pointer to the path string to normalize
+*/
+void NormalizeDataFilePath(char* path);
+
 #endif // _WDCONFIG__H

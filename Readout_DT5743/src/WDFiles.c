@@ -37,11 +37,37 @@ static char* lskip(const char* s)
 }
 
 // --------------------------------------------------------------------------------------------------------- 
+// Description: Ensure path ends with a path separator (/ or \)
+// Return:		none
+// --------------------------------------------------------------------------------------------------------- 
+static void NormalizeOutputPath(char* path) {
+	size_t len = strlen(path);
+	if (len == 0) {
+		strcpy(path, "./");
+		return;
+	}
+	
+	// Check if path already ends with a separator
+	char lastChar = path[len - 1];
+	if (lastChar != '/' && lastChar != '\\') {
+		// Add appropriate separator for the platform
+#ifdef WIN32
+		strcat(path, "\\");
+#else
+		strcat(path, "/");
+#endif
+	}
+}
+
+// --------------------------------------------------------------------------------------------------------- 
 // Description: create the folder for output files
 // Return:		0=OK, -1=error
 // --------------------------------------------------------------------------------------------------------- 
 static int CreateOutputFolder() {
 	struct stat st = { 0 };
+	
+	// Normalize the path to ensure it ends with a separator
+	NormalizeOutputPath(WDcfg.DataFilePath);
 
 	if (stat(WDcfg.DataFilePath, &st) == -1) {
 		//return mkdir(WDcfg.DataFilePath, 700);

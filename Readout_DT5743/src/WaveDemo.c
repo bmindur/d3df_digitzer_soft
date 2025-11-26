@@ -2476,13 +2476,90 @@ int main(int argc, char *argv[]) {
 	/* Get command line options                                                                */
 	/* *************************************************************************************** */
 	strcpy(ConfigFileName, DEFAULT_CONFIG_FILE);
+	
+	// Command-line overrides (will be applied after config file is parsed)
+	int cmdline_batch_mode = -1;  // -1 means not set
+	uint64_t cmdline_max_events = 0;
+	uint64_t cmdline_max_time = 0;
+	char cmdline_datapath[200] = "";
+	int has_cmdline_overrides = 0;
+	
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-') {
 			if (argv[i][1] == 'h' || strcmp(argv[i], "--help") == 0) {
-				printf("Syntax: %s [options] | [ConfigFileName]\n", argv[0]);
-				printf(" ConfigFileName: configuration file (default is %s)\n", DEFAULT_CONFIG_FILE);
-				printf(" --version : Print program version.\n");
+				printf("Syntax: %s [options] [ConfigFileName]\n", argv[0]);
+				printf("\n");
+				printf("Options:\n");
+				printf("  ConfigFileName              : configuration file (default is %s)\n", DEFAULT_CONFIG_FILE);
+				printf("  --version                   : Print program version\n");
+				printf("  -h, --help                  : Show this help message\n");
+				printf("\n");
+				printf("Batch Mode Options:\n");
+				printf("  --batch                     : Enable batch mode 2 (no visualization)\n");
+				printf("  --batch-mode <0|1|2>        : Set batch mode (0=interactive, 1=with vis, 2=no vis)\n");
+				printf("  --max-events <N>            : Maximum events to record (overrides config)\n");
+				printf("  --max-time <seconds>        : Maximum time in seconds (overrides config)\n");
+				printf("  --output-path <path>        : Output data path (overrides config)\n");
+				printf("\n");
+				printf("Examples:\n");
+				printf("  %s --batch --max-events 10000 --output-path ./my_data/\n", argv[0]);
+				printf("  %s myconfig.ini --batch-mode 1 --max-time 300\n", argv[0]);
+				printf("\n");
 				goto QuitProgram;
+			}
+			else if (strcmp(argv[i], "--batch") == 0) {
+				cmdline_batch_mode = 2;  // Batch mode without visualization
+				has_cmdline_overrides = 1;
+			}
+			else if (strcmp(argv[i], "--batch-mode") == 0) {
+				if (i + 1 < argc) {
+					int mode = atoi(argv[++i]);
+					if (mode >= 0 && mode <= 2) {
+						cmdline_batch_mode = mode;
+						has_cmdline_overrides = 1;
+					}
+					else {
+						printf("ERROR: Invalid batch mode '%d'. Must be 0, 1, or 2.\n", mode);
+						return -1;
+					}
+				}
+				else {
+					printf("ERROR: --batch-mode requires a value (0, 1, or 2)\n");
+					return -1;
+				}
+			}
+			else if (strcmp(argv[i], "--max-events") == 0) {
+				if (i + 1 < argc) {
+					cmdline_max_events = (uint64_t)atoll(argv[++i]);
+					has_cmdline_overrides = 1;
+				}
+				else {
+					printf("ERROR: --max-events requires a value\n");
+					return -1;
+				}
+			}
+			else if (strcmp(argv[i], "--max-time") == 0) {
+				if (i + 1 < argc) {
+					cmdline_max_time = (uint64_t)atoll(argv[++i]);
+					has_cmdline_overrides = 1;
+				}
+				else {
+					printf("ERROR: --max-time requires a value\n");
+					return -1;
+				}
+			}
+			else if (strcmp(argv[i], "--output-path") == 0) {
+				if (i + 1 < argc) {
+					strcpy(cmdline_datapath, argv[++i]);
+					has_cmdline_overrides = 1;
+				}
+				else {
+					printf("ERROR: --output-path requires a path\n");
+					return -1;
+				}
+			}
+			else {
+				printf("WARNING: Unknown option '%s' (use --help for usage)\n", argv[i]);
 			}
 		}
 		else {
@@ -2507,6 +2584,34 @@ int main(int argc, char *argv[]) {
 	}
 	fclose(f_ini);
 	msg_printf(MsgLog, "INFO: Configuration file parsed\n");
+
+	// Apply command-line overrides
+	if (has_cmdline_overrides) {
+		msg_printf(MsgLog, "INFO: Applying command-line overrides\n");
+		
+		if (cmdline_batch_mode >= 0) {
+			WDcfg.BatchMode = cmdline_batch_mode;
+			msg_printf(MsgLog, "  BatchMode = %d (from command line)\n", cmdline_batch_mode);
+		}
+		
+		if (cmdline_max_events > 0) {
+			WDcfg.BatchMaxEvents = cmdline_max_events;
+			msg_printf(MsgLog, "  BatchMaxEvents = %llu (from command line)\n", (unsigned long long)cmdline_max_events);
+		}
+		
+		if (cmdline_max_time > 0) {
+			WDcfg.BatchMaxTime = cmdline_max_time;
+			msg_printf(MsgLog, "  BatchMaxTime = %llu (from command line)\n", (unsigned long long)cmdline_max_time);
+		}
+		
+		if (strlen(cmdline_datapath) > 0) {
+			strcpy(WDcfg.DataFilePath, cmdline_datapath);
+			NormalizeDataFilePath(WDcfg.DataFilePath);
+			msg_printf(MsgLog, "  DataFilePath = %s (from command line)\n", WDcfg.DataFilePath);
+		}
+		
+		printf("*** Command-line overrides applied\n");
+	}
 
 	initializer(&WDcfg);
 

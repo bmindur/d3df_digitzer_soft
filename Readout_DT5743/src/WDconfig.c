@@ -121,6 +121,26 @@ bool GetFloatOption(const char* name, const char* value, float* ret) {
 	printf("Option '%s' for setting %s is not a valid float value!\n", value, name);
 	return false;
 }
+
+void NormalizeDataFilePath(char* path) {
+	size_t len = strlen(path);
+	if (len == 0) {
+		strcpy(path, "./");
+		return;
+	}
+	
+	// Check if path already ends with a separator
+	char lastChar = path[len - 1];
+	if (lastChar != '/' && lastChar != '\\') {
+		// Add appropriate separator for the platform
+#ifdef WIN32
+		strcat(path, "\\");
+#else
+		strcat(path, "/");
+#endif
+	}
+}
+
 void GetString(const char* value, char* ret, const char* default_value) {
 	if (sscanf(value, "%s", ret) == 1) {
 		return;
@@ -140,6 +160,7 @@ void SetDefaultConfiguration(WaveDemoConfig_t *WDcfg) {
 	// fill general settings
 	strcpy(WDcfg->GnuPlotPath, GNUPLOT_DEFAULT_PATH);
 	strcpy(WDcfg->DataFilePath, DATA_FILE_PATH);
+	NormalizeDataFilePath(WDcfg->DataFilePath);
 	WDcfg->isRunNumberTimestamp = true;
 	WDcfg->NumBoards = 0;
 	WDcfg->doReset = 1;
@@ -295,8 +316,10 @@ static int parseOptions(const char* name, const char* value, WaveDemoConfig_t* W
 	if (strcmp(name, "GNUPLOT_PATH") == 0) 
 		GetString(value, WDcfg->GnuPlotPath, "./");
 	// Data File path
-	if (strcmp(name, "DATAFILE_PATH") == 0) 
+	if (strcmp(name, "DATAFILE_PATH") == 0) {
 		GetString(value, WDcfg->DataFilePath, "./");
+		NormalizeDataFilePath(WDcfg->DataFilePath);
+	}
 
 	// Types file save
 	if (strcmp(name, "SAVE_RAW_DATA") == 0)

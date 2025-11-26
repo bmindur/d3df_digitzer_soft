@@ -4,6 +4,8 @@
 
 Batch mode allows the WaveDemo x743 program to run automatically without user interaction, stopping when specified conditions are met. This is useful for automated data collection, testing, and long-running experiments.
 
+Batch mode can be configured either through the configuration file or via command-line arguments (which override the config file settings).
+
 ## Batch Mode Options
 
 The batch mode can be configured in three ways:
@@ -12,7 +14,9 @@ The batch mode can be configured in three ways:
 - **Mode 1 (Batch with visualization)**: Auto-starts acquisition, enables plotting and statistics, stops automatically
 - **Mode 2 (Batch without visualization)**: Auto-starts acquisition, minimal output, no plotting, stops automatically
 
-## Configuration Parameters
+## Configuration Methods
+
+### Method 1: Configuration File
 
 Add these parameters to the `[OPTIONS]` section of `WaveDemoConfig.ini`:
 
@@ -30,6 +34,23 @@ BATCH_MAX_EVENTS = 0
 BATCH_MAX_TIME = 0
 ```
 
+### Method 2: Command-Line Arguments
+
+Command-line arguments override the configuration file settings:
+
+```bash
+# Basic options
+--help, -h              Show help message with all options
+--version               Print program version
+
+# Batch mode control
+--batch                 Enable batch mode 2 (no visualization)
+--batch-mode <0|1|2>    Set batch mode explicitly
+--max-events <N>        Maximum events to record (overrides config)
+--max-time <seconds>    Maximum time in seconds (overrides config)
+--output-path <path>    Output data path (overrides config)
+```
+
 ## Termination Conditions
 
 The acquisition automatically stops when **EITHER** of the following conditions is met:
@@ -40,6 +61,8 @@ The acquisition automatically stops when **EITHER** of the following conditions 
 Set either parameter to `0` to disable that condition. At least one condition should be set to a non-zero value for automatic termination.
 
 ## Usage Examples
+
+### Configuration File Examples
 
 ### Example 1: Collect 10,000 events with visualization
 ```ini
@@ -62,7 +85,34 @@ BATCH_MAX_EVENTS = 100000
 BATCH_MAX_TIME = 3600
 ```
 
-### Example 4: Interactive mode (default behavior)
+### Command-Line Examples
+
+### Example 1: Quick batch run with 10,000 events (no visualization)
+```bash
+WaveDemo_x743.exe --batch --max-events 10000
+```
+
+### Example 2: Batch run for 5 minutes with custom output path
+```bash
+WaveDemo_x743.exe --batch --max-time 300 --output-path ./my_experiment/
+```
+
+### Example 3: Use custom config with command-line overrides
+```bash
+WaveDemo_x743.exe myconfig.ini --batch-mode 1 --max-events 50000 --max-time 600
+```
+
+### Example 4: Override only output path (use config for batch settings)
+```bash
+WaveDemo_x743.exe --output-path D:/data/run_2025_11_26/
+```
+
+### Example 5: Full command-line control
+```bash
+WaveDemo_x743.exe myconfig.ini --batch-mode 2 --max-events 100000 --max-time 3600 --output-path ./batch_data/
+```
+
+### Example 6: Interactive mode (default behavior)
 ```ini
 BATCH_MODE = 0
 BATCH_MAX_EVENTS = 0
@@ -176,6 +226,16 @@ At the end of the batch run, the program displays the output directory where all
 - **`SAVE_RUN_INFO` is automatically enabled in batch mode (forced to YES)**
 - **Statistics are displayed at completion showing event counts, rates, and throughput**
 - **Output file locations are printed at startup and completion for easy reference**
+- **Command-line arguments override configuration file settings**
+- **Command-line overrides are logged to the message log file**
+
+## Command-Line Priority
+
+When both configuration file and command-line arguments are provided:
+1. Configuration file is loaded first
+2. Command-line arguments override the corresponding config file values
+3. All other settings from config file remain unchanged
+4. Overrides are logged to MsgLog.txt for tracking
 
 ## Version
 
