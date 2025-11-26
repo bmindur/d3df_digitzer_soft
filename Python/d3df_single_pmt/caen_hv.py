@@ -66,10 +66,10 @@ def main():
         '--val', help='Optional value (e.g. 200.0)', default=None
     )
     parser.add_argument(
-        '--channel', default='2', help='HV channel (default 2)'
+        '--channel', default='1', help='HV channel (default 1)'
     )
     parser.add_argument(
-        '--device', default='/dev/caen_hv', help='Serial device path or URL'
+        '--device', default='COM10', help='Serial device path or URL  (default COM10)'
     )
     parser.add_argument(
         '--baudrate', type=int, default=9600, help='Baud rate (default 9600)'
