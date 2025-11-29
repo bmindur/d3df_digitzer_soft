@@ -1,0 +1,183 @@
+# ****************************************************************
+# WaveDemo_x743 Configuration Template (YAML)
+# ****************************************************************
+# This YAML file can be used with run-dt5743 script to generate
+# WaveDemoConfig.ini with custom settings.
+# 
+# Usage: run-dt5743 --yaml WaveDemoConfig.template.yaml [options]
+#
+# Note: Only include sections/keys you want to override from the
+# base INI template. Missing keys will use template defaults.
+# ****************************************************************
+
+# ----------------------------------------------------------------
+# Board Connection Parameters
+# ----------------------------------------------------------------
+CONNECTIONS:
+  # OPEN 0: Digitizer connection string
+  # Examples:
+  #   "USB 0 0"                    - Desktop/NIM via USB
+  #   "USB 0 32100000"            - VME via USB-V1718
+  #   "PCI 0 0 0"                 - Desktop/NIM via CONET
+  #   "ETH_V4718 192.168.1.254 0 32100000" - VME via ETH-V4718
+  OPEN 0: "USB 0 0"
+
+# ----------------------------------------------------------------
+# Program Options
+# ----------------------------------------------------------------
+OPTIONS:
+  # Output data path (folder created if needed)
+  DATAFILE_PATH: "./data_output/"
+  
+  # File saving options (YES/NO)
+  SAVE_RAW_DATA: YES
+  SAVE_TDC_LIST: YES
+  SAVE_WAVEFORM: YES
+  SAVE_ENERGY_HISTOGRAM: YES
+  SAVE_TIME_HISTOGRAM: YES
+  SAVE_LISTS: YES
+  SAVE_RUN_INFO: YES
+  
+  # Output format: BINARY or ASCII
+  OUTPUT_FILE_FORMAT: ASCII
+  
+  # Include header in output files: YES or NO
+  OUTPUT_FILE_HEADER: YES
+  
+  # Timestamp unit: 0=ps, 1=ns, 2=us, 3=ms, 4=s
+  OUTPUT_FILE_TIMESTAMP_UNIT: 1
+  
+  # Enable statistics and plotting during run: YES or NO
+  STATS_RUN_ENABLE: YES
+  PLOT_RUN_ENABLE: YES
+  
+  # Reset digitizer before programming: YES or NO
+  DGTZ_RESET: YES
+  
+  # Multi-board sync: YES or NO (requires TRIGGER_TYPE = EXTERNAL)
+  SYNC_ENABLE: NO
+  
+  # Trigger position in acquisition window: 10 to 90 (%)
+  TRIGGER_FIXED: 20
+  
+  # Reference board and channel for TOF measurements
+  BOARD_REF: 0
+  CHANNEL_REF: 0
+  
+  # Histogram options
+  ENERGY_H_NBIN: "4K"  # 1K, 2K, 4K, 8K, 16K
+  TIME_H_NBIN: "1K"    # 256, 512, 1K, 2K, 4K, 8K, 16K
+  TIME_H_MODE: START_STOP  # START_STOP or INTERVALS
+  TIME_H_MIN: -16  # ns
+  TIME_H_MAX: 16   # ns
+  
+  # Batch mode settings
+  # 0 = interactive, 1 = batch with viz, 2 = batch no viz
+  BATCH_MODE: 0
+  # Maximum events before auto-stop (0 = unlimited)
+  BATCH_MAX_EVENTS: 0
+  # Maximum time in seconds before auto-stop (0 = unlimited)
+  BATCH_MAX_TIME: 0
+
+# ----------------------------------------------------------------
+# Common Settings (applied to all channels by default)
+# ----------------------------------------------------------------
+COMMON:
+  # Enable all channels by default: YES or NO
+  INPUT_ENABLE: NO
+  
+  # Sampling frequency: 0=3.2GHz, 1=1.6GHz, 2=800MHz, 3=400MHz
+  SAMPLING_FREQUENCY: 0
+  
+  # Integral Non-Linearity correction: YES or NO
+  INL_CORRECTION_ENABLE: YES
+  
+  # Trigger type: SOFTWARE, NORMAL, EXTERNAL, ADVANCED
+  TRIGGER_TYPE: NORMAL
+  
+  # Channel self-trigger enable: YES or NO
+  CHANNEL_TRIGGER_ENABLE: YES
+  
+  # Number of samples in acquisition window: multiple of 16 (16-1024)
+  RECORD_LENGTH: 1024
+  
+  # Post-trigger delay (SAMLONG clock periods): 1 to 255
+  POST_TRIGGER: 20
+  
+  # Trigger edge: RISING or FALLING
+  TRIGGER_EDGE: RISING
+  
+  # Trigger threshold in Volts: -1.25 to 1.25
+  TRIGGER_THRESHOLD: 0.05
+  
+  # Input signal polarity: POSITIVE or NEGATIVE
+  PULSE_POLARITY: POSITIVE
+  
+  # Front panel I/O level: NIM or TTL
+  FPIO_LEVEL: NIM
+  
+  # DC offset in Volts: -1.25 to 1.25
+  DC_OFFSET: 0
+  
+  # Waveform processing options
+  GATE_WIDTH: 150      # ns
+  PRE_GATE: 10         # ns
+  NS_BASELINE: 15      # samples
+  DISCR_MODE: CFD      # LED or CFD
+  CFD_DELAY: 2         # ns
+  CFD_ATTEN: 0.8       # 0.0 to 1.0
+  TTF_SMOOTHING: 0     # 0=disabled, 1-4 => 2,4,8,16 samples
+
+# ----------------------------------------------------------------
+# Board-Specific Settings
+# ----------------------------------------------------------------
+# Override common settings for specific boards/channels
+# Format: "BOARD N" and "BOARD N - CHANNEL M"
+# ----------------------------------------------------------------
+
+"BOARD 0":
+  INPUT_ENABLE: NO
+  
+"BOARD 0 - CHANNEL 0":
+  INPUT_ENABLE: YES
+  DC_OFFSET: 0
+  TRIGGER_EDGE: FALLING
+  PULSE_POLARITY: NEGATIVE
+  TRIGGER_THRESHOLD: -0.2
+
+"BOARD 0 - CHANNEL 1":
+  INPUT_ENABLE: NO
+  DC_OFFSET: 0
+  TRIGGER_EDGE: RISING
+  PULSE_POLARITY: POSITIVE
+  TRIGGER_THRESHOLD: 0.2
+
+"BOARD 0 - CHANNEL 2":
+  INPUT_ENABLE: NO
+
+"BOARD 0 - CHANNEL 3":
+  INPUT_ENABLE: NO
+
+# ----------------------------------------------------------------
+# Example: Simplified configuration for typical use case
+# ----------------------------------------------------------------
+# Uncomment and modify these sections for common scenarios:
+
+# # Single channel, negative pulses, batch mode
+# OPTIONS:
+#   DATAFILE_PATH: "./my_experiment/"
+#   BATCH_MODE: 2
+#   BATCH_MAX_EVENTS: 10000
+#   SAVE_WAVEFORM: YES
+#   SAVE_RAW_DATA: NO
+# 
+# COMMON:
+#   SAMPLING_FREQUENCY: 0  # 3.2 GHz
+#   TRIGGER_TYPE: NORMAL
+#   TRIGGER_THRESHOLD: -0.05
+#   PULSE_POLARITY: NEGATIVE
+#   TRIGGER_EDGE: FALLING
+# 
+# "BOARD 0 - CHANNEL 0":
+#   INPUT_ENABLE: YES
+#   TRIGGER_THRESHOLD: -0.1
