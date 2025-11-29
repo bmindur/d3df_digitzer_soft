@@ -803,12 +803,12 @@ int SaveRunInfo(char *ConfigFileName) {
 	fprintf(rinf, "Total processed events = %llu\n", WDstats.TotEvRead_cnt);
 	fprintf(rinf, "Total bytes = %.4f MB\n", (float)WDstats.RxByte_cnt / (1024 * 1024));
 	for (b = 0; b < WDcfg.NumBoards; b++) {
-		fprintf(rinf, "Board %2d : LastTstamp(s)   NumEvents      Rate(KHz)\n", b);
+		fprintf(rinf, "Board %2d : LastTstamp(s)   NumEvents      Rate(Hz)\n", b);
 		for (ch = 0; ch < WDcfg.handles[b].Nch; ch++) {
 			if (WDcfg.boards[b].channels[ch].ChannelEnable) {
-				float rate = (WDstats.LatestProcTstamp[b][ch] > 0) ? (float)WDstats.EvProcessed_cnt[b][ch] / ((float)WDstats.LatestProcTstamp[b][ch] / 1e6) : 0;
-				rate = 0;
-				fprintf(rinf, "   Ch %2d:  %10.2f   %12llu  %12.4f\n", ch, (float)WDstats.LatestProcTstamp[b][ch] / 1e9, WDstats.EvRead_cnt[b][ch], rate);
+				float rate = (WDstats.LatestProcTstamp[b][ch] > 0) ? (float)WDstats.EvProcessed_cnt[b][ch] / ((float)WDstats.LatestProcTstamp[b][ch] / 1e9) : 0;
+				// rate = 0;
+				fprintf(rinf, "   Ch %2d:  %10.2f   %12llu  %12.2f\n", ch, (float)WDstats.LatestProcTstamp[b][ch] / 1e9, WDstats.EvRead_cnt[b][ch], rate);
 			}
 		}
 	}

@@ -44,11 +44,11 @@ WaveDemo_x743.exe myconfig.ini --batch-mode 2 --max-events 10000
 
 ## Batch Modes
 
-| Mode | Name | Description | Plots | Keyboard | Statistics |
-|------|------|-------------|-------|----------|-----------|
-| 0 | Interactive | Normal operation | Yes | Yes | Yes |
-| 1 | Batch with vis | Auto-run with plots | Yes | Yes | Yes |
-| 2 | Batch no vis | Auto-run headless | No | No | Minimal |
+| Mode | Name | Description | Plots | Keyboard | Statistics | Soft Stop |
+|------|------|-------------|-------|----------|-----------|-----------|
+| 0 | Interactive | Normal operation | Yes | Yes | Yes | s, q |
+| 1 | Batch with vis | Auto-run with plots | Yes | Yes | Yes | s, q |
+| 2 | Batch no vis | Auto-run headless | No | q/s only | Minimal | q, s |
 
 ## Override Behavior
 

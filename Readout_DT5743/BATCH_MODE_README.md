@@ -57,6 +57,9 @@ The acquisition automatically stops when **EITHER** of the following conditions 
 
 1. **Event Count**: Total events across all enabled channels reaches `BATCH_MAX_EVENTS`
 2. **Time Limit**: Elapsed time reaches `BATCH_MAX_TIME` seconds
+3. **Manual Stop**: 
+   - Mode 0 & 1: Press 's' (stop/start toggle) or 'q' (quit)
+   - Mode 2: Press 'q' or 's' for soft stop (saves data and exits gracefully)
 
 Set either parameter to `0` to disable that condition. At least one condition should be set to a non-zero value for automatic termination.
 
@@ -134,7 +137,7 @@ BATCH_MAX_TIME = 0
 - Acquisition starts automatically when program launches
 - No waveform or histogram plotting
 - **Statistics updated but not printed to console (except progress every 10 seconds)**
-- Keyboard input disabled (streamlined for background operation)
+- **Soft stop: Press 'q' or 's' to stop acquisition early**
 - **Run info file automatically saved at completion**
 - Program exits automatically when conditions are met
 - Ideal for headless/automated environments

@@ -2716,6 +2716,9 @@ Restart:
 		StartAcquisition(&WDcfg);
 		WDrun.AcqRun = 1;
 		printf("Acquisition started automatically (batch mode)\n");
+		if (WDcfg.BatchMode == 2) {
+			printf("Press 'q' or 's' to stop acquisition early\n");
+		}
 	}
 	else if (WDrun.Restart && WDrun.AcqRun) {
 		StartAcquisition(&WDcfg);
@@ -2731,8 +2734,41 @@ Restart:
 	/* Readout Loop                                                                            */
 	/* *************************************************************************************** */
 	while (!WDrun.Quit) {
-		// Check for keyboard commands (key pressed) - skip in batch mode without visualization
-		if (WDcfg.BatchMode != 2) {
+		// Check for keyboard commands (key pressed)
+		if (WDcfg.BatchMode == 2) {
+			// In batch mode 2 (no visualization), only check for soft stop keys (q or s)
+			if (kbhit()) {
+				int c = getch();
+				if (c == 'q' || c == 's') {
+					printf("\n");
+					printf("========================================\n");
+					printf("BATCH MODE STOPPED BY USER\n");
+					printf("========================================\n");
+					WDrun.AcqRun = 0;
+					StopAcquisition(&WDcfg);
+					
+					// Print final statistics and file information
+					if (WDcfg.enableStats) {
+						UpdateStatistics(get_time());
+						PrintStatistics();
+					}
+					if (WDcfg.SaveRunInfo)
+						SaveRunInfo(ConfigFileName);
+					if (WDcfg.SaveHistograms)
+						SaveAllHistograms();
+					CloseOutputDataFiles();
+					
+					printf("\n");
+					printf("Output files saved in: %s\n", WDcfg.DataFilePath);
+					printf("========================================\n");
+					
+					WDrun.Quit = 1; // Exit the loop
+					continue;
+				}
+			}
+		}
+		else if (WDcfg.BatchMode != 2) {
+			// Normal keyboard command processing for mode 0 and 1
 			if (CheckKeyboardCommands(&WDrun, &WDcfg) == 0) {
 				SLEEP(40); //pause to see messages displayed
 			}
@@ -2916,7 +2952,7 @@ Restart:
 						ComputeThroughput(&WDcfg, &WDrun, ElapsedTime);
 					}
 				}
-				else if (WDcfg.BatchMode == 1) { // Print statistics in batch mode 1
+				else if (WDcfg.BatchMode == 1 || WDcfg.BatchMode == 0) { // Print statistics in batch mode 1 and interactive mode 0
 					PrintStatistics();
 				}
 				PrevLogTime = CurrentTime;
@@ -2978,8 +3014,8 @@ QuitProgram:
 		msg_printf(MsgLog, "ERROR %d: %s\n", ErrCode, ErrMsg[ErrCode]);
 #ifdef WIN32
 		printf("\n");
-		printf("Press a key to quit\n");
-		_getch();
+		// printf("Press a key to quit\n");
+		// _getch();
 #endif
 	}
 
