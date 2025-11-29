@@ -20,6 +20,7 @@
 
 int InitConsole();
 void ClearScreen();
+void SetAllowClearScreen(int allow);
 
 int msg_printf(FILE *fLog, char *fmt, ...);
 

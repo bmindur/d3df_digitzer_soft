@@ -2202,7 +2202,9 @@ void ChannelLogString(int b, int ch, int StatsMode, char *str) {
 
 void PrintStatistics() {
 	char str[100];
-	ClearScreen();
+	if (WDcfg.BatchMode != 2) {
+		ClearScreen();
+	}
 	printf("\t--- WaveDemo for x743 Digitizer Family  (version: %s) ---\n", WaveDemo_Release);
 #ifdef _DEBUG
 	printf("\t\tDEBUG VERSION IS RUNNING\n");
@@ -2371,6 +2373,7 @@ int CheckBatchModeConditions(WaveDemoRun_t *WDrun, WaveDemoConfig_t *WDcfg) {
 					(unsigned long long)elapsedSeconds,
 					(unsigned long long)WDcfg->BatchMaxTime,
 					(unsigned long long)totalEvents);
+					
 				lastPrintTime = elapsedSeconds;
 			}
 		}
@@ -2454,8 +2457,12 @@ int main(int argc, char *argv[]) {
 	/* *************************************************************************************** */
 	/* Software Initialize                                                                     */
 	/* *************************************************************************************** */
-	// init the console window (I/O terminal)
-	InitConsole();
+	// init the console window (I/O terminal) — skip in batch mode 2
+	if (WDcfg.BatchMode != 2) {
+		InitConsole();
+	}
+	// Ensure all stdio prints flush immediately
+	setvbuf(stdout, NULL, _IONBF, 0);
 	// open message log file
 	sprintf(MsgLogFileName, "%sMsgLog.txt", "");
 	MsgLog = fopen(MsgLogFileName, "w");
@@ -2688,9 +2695,14 @@ Restart:
 	printf("\n");
 	
 	// Batch mode: start acquisition automatically
+	SetAllowClearScreen(1); // allow screen clear by default
 	if (WDcfg.BatchMode > 0) {
 		// Force SaveRunInfo in batch mode
 		WDcfg.SaveRunInfo = 1;
+		// Disable any screen-clear behavior in headless batch mode
+		if (WDcfg.BatchMode == 2) {
+			SetAllowClearScreen(0);
+		}
 		
 		printf("========================================\n");
 		printf("BATCH MODE ENABLED (Mode %d)\n", WDcfg.BatchMode);
@@ -2759,7 +2771,7 @@ Restart:
 					CloseOutputDataFiles();
 					
 					printf("\n");
-					printf("Output files saved in: %s\n", WDcfg.DataFilePath);
+					PrintOutputFilesSummary();
 					printf("========================================\n");
 					
 					WDrun.Quit = 1; // Exit the loop
@@ -2796,7 +2808,7 @@ Restart:
 				CloseOutputDataFiles();
 				
 				printf("\n");
-				printf("Output files saved in: %s\n", WDcfg.DataFilePath);
+				PrintOutputFilesSummary();
 				printf("========================================\n");
 				
 				WDrun.Quit = 1; // Exit the loop
@@ -2980,7 +2992,7 @@ Restart:
 QuitProgram:
 	if (!WDrun.Restart) {
 		printf("Closing...\n");
-		SLEEP(500);
+		// SLEEP(500);
 	}
 
 	/* stop the acquisition */

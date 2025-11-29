@@ -830,6 +830,58 @@ int SaveRunInfo(char *ConfigFileName) {
 	return 0;
 }
 
+// --------------------------------------------------------------------------------------------------------- 
+// Description: Print a summary of expected output files based on configuration
+// Return:      none
+// --------------------------------------------------------------------------------------------------------- 
+void PrintOutputFilesSummary() {
+	char fname[300];
+	int b, ch;
+	printf("Output files saved in: %s\n", WDcfg.DataFilePath);
+	// Run info
+	if (WDcfg.SaveRunInfo) {
+		CreateOutputFileName(OUTPUTFILE_TYPE_RUN_INFO, 0, 0, fname);
+		printf("  %s\n", fname);
+	}
+	// Raw data
+	if (WDcfg.SaveRawData) {
+		CreateOutputFileName(OUTPUTFILE_TYPE_RAW, 0, 0, fname);
+		printf("  %s\n", fname);
+	}
+	// Merged list file
+	if (WDcfg.SaveLists & 0x2) {
+		CreateOutputFileName(OUTPUTFILE_TYPE_LIST_MERGED, 0, 0, fname);
+		printf("  %s\n", fname);
+	}
+	// Per channel files
+	for (b = 0; b < WDcfg.NumBoards; b++) {
+		for (ch = 0; ch < WDcfg.handles[b].Nch; ch++) {
+			if (!WDcfg.boards[b].channels[ch].ChannelEnable)
+				continue;
+			if (WDcfg.SaveTDCList) {
+				CreateOutputFileName(OUTPUTFILE_TYPE_TDCLIST, b, ch, fname);
+				printf("  %s\n", fname);
+			}
+			if (WDcfg.SaveLists & 0x1) {
+				CreateOutputFileName(OUTPUTFILE_TYPE_LIST, b, ch, fname);
+				printf("  %s\n", fname);
+			}
+			if (WDcfg.SaveWaveforms) {
+				CreateOutputFileName(OUTPUTFILE_TYPE_WAVE, b, ch, fname);
+				printf("  %s\n", fname);
+			}
+			if (WDcfg.SaveHistograms & 0x1) {
+				CreateOutputFileName(OUTPUTFILE_TYPE_EHISTO, b, ch, fname);
+				printf("  %s\n", fname);
+			}
+			if (WDcfg.SaveHistograms & 0x2) {
+				CreateOutputFileName(OUTPUTFILE_TYPE_THISTO, b, ch, fname);
+				printf("  %s\n", fname);
+			}
+		}
+	}
+}
+
 
 // --------------------------------------------------------------------------------------------------------- 
 // Description: Save all the regsiters of the borad to a file

@@ -27,27 +27,35 @@ int InitConsole()
 // --------------------------------------------------------------------------------------------------------- 
 // Description: clear the console
 // --------------------------------------------------------------------------------------------------------- 
+static int s_allowClear = 1;
+void SetAllowClearScreen(int allow) { s_allowClear = allow ? 1 : 0; }
 void ClearScreen()
 {
-	system("clear");
+	if (s_allowClear)
+		system("clear");
 }
 #else  // Windows
 // --------------------------------------------------------------------------------------------------------- 
 //  Init console window (terminal)
-// --------------------------------------------------------------------------------------------------------- 
+// ---------------------------------------------------------------------------------------------------------
+static int s_allowClear = 0;
+
 int InitConsole()
 {
 	// Set console window size
-	system("mode con: cols=100 lines=50");
+	if (s_allowClear)
+		system("mode con: cols=100 lines=50");
 	return 0;
 }
 
 // --------------------------------------------------------------------------------------------------------- 
 // Description: clear the console
 // --------------------------------------------------------------------------------------------------------- 
+void SetAllowClearScreen(int allow) { s_allowClear = allow ? 1 : 0; }
 void ClearScreen()
 {
-	system("cls");
+	if (s_allowClear)
+		system("cls");
 }
 #endif
 

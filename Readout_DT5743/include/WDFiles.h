@@ -34,5 +34,6 @@ int SaveWaveform(int bd, int ch, WaveDemoEvent_t* event);
 int SaveList(int bd, int ch, WaveDemoEvent_t* event);
 int SaveRunInfo(char* ConfigFileName);
 int SaveRegImage(int handle);
+void PrintOutputFilesSummary();
 
 #endif
