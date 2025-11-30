@@ -50,6 +50,52 @@ After installation, the following console scripts are available:
 - `plot-analysis` — Generate all analysis and timing plots
 - `plot-timing-vs-hv` — Plot timing parameters vs PMT HV from analysis results
 - `caen-hv` — Control CAEN HV via serial
+- `digitizer-web` — Launch FastAPI web interface (HV control + measurement batching)
+
+## Web Interface (`digitizer-web`)
+Start the server:
+```powershell
+digitizer-web
+```
+Then open: http://localhost:8000/docs for interactive Swagger UI.
+
+### HV Endpoints
+- `POST /hv/set` — Set HV (VSET). Body: `{ "value": -1800 }`
+- `GET /hv/read` — Read current HV (VMON)
+- `POST /hv/send` — Raw command (e.g. `{ "cmd": "MON", "par": "VMON" }`)
+- `WS /ws/hv` — Live HV monitoring. Example (browser console):
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/hv?interval=2');
+ws.onmessage = e => console.log(JSON.parse(e.data));
+```
+
+### Measurement Control
+- `POST /measure/start` — Start batch measurement. Example body:
+```json
+{
+  "yaml": "config.yaml",
+  "data_output": "./data_output",
+  "exe": "WaveDemo_x743.exe",
+  "batch_mode": 2,
+  "max_events": 0,
+  "max_time": 30,
+  "hv_sequence": [-1800, -1700],
+  "thresholds": [-0.10, -0.20],
+  "repeat": 2
+}
+```
+- `POST /measure/stop/{id}` — Stop measurement loop
+- `GET /measure/status` — Snapshot of all tasks
+- `WS /ws/measure/{id}` — Live progress JSON (elapsed, events, rate, hv, threshold)
+
+Progress lines (heuristic) derived from underlying runner output; events parsed from lines containing the word "events".
+Rate = events / elapsed seconds.
+
+### Notes
+- HV values auto-coerced to negative if positive provided.
+- For infinite measurement loop, send `"repeat": -1`.
+- Threshold / HV sweeping: All combinations iterated per repeat.
+- Extend parsing logic in `webapp.py` if WaveDemo output format differs.
 
 ### Example: Convert and plot
 ```powershell

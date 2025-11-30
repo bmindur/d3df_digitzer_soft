@@ -1,6 +1,6 @@
 [project]
 name = "d3df-single-pmt"
-version = "0.4.11"
+version = "0.5.7"
 description = "CAEN DT5743 waveform CSV to HDF5 converter, pulse analysis, and advanced plotting for single PMT workflows."
 authors = [{name = "Bartosz Mindur", email = "mindur@agh.edu.pl"}]
 readme = "README.md"
@@ -19,7 +19,9 @@ dependencies = [
   "pandas",
   "matplotlib",
   "pyserial",
-  "pyyaml"
+  "pyyaml",
+  "fastapi",
+  "uvicorn[standard]"
 ]
 
 [project.urls]
@@ -35,7 +37,15 @@ plot-timing = "d3df_single_pmt.plot_analysis:main"
 plot-timing-vs-hv = "d3df_single_pmt.plot_timing_vs_hv:main"
 measure-dt5743 = "d3df_single_pmt.dt5743_runner:main"
 measure-dt = "d3df_single_pmt.dt5743_runner:main"
+digitizer-web = "d3df_single_pmt.webapp:main"
 
 [build-system]
 requires = ["setuptools>=67", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+# Include static assets (app.js) in the installed package
+"d3df_single_pmt" = ["static/*.js"]
+
+[tool.setuptools.packages.find]
+include = ["d3df_single_pmt*"]

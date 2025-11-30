@@ -49,7 +49,7 @@ def send_caen_command(
         if not out:
             return ''
         if ':' in out:
-            return out.split(':')[-1].split('\n')[0].strip()
+            return out.split(':')[-1].split('\n')[0].strip().strip(';')
         return out
     except SerialException as e:
         raise RuntimeError(f"Serial IO failed: {e}") from e
