@@ -5,6 +5,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime
+import logging
 
 try:
     import yaml  # Requires PyYAML
@@ -14,6 +15,28 @@ except Exception:
 from .caen_hv import main as caen_hv_main
 from io import StringIO
 import contextlib
+from logging import handlers
+
+
+def setup_logger(log_dir, name='dt5743_runner'):
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{name}.log")
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    # Avoid duplicate handlers if called twice
+    if not logger.handlers:
+        fmt = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        # File handler (rotating)
+        fh = handlers.RotatingFileHandler(log_path, maxBytes=2*1024*1024, backupCount=3, encoding='utf-8')
+        fh.setFormatter(fmt)
+        fh.setLevel(logging.INFO)
+        logger.addHandler(fh)
+        # Stdout handler
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(fmt)
+        sh.setLevel(logging.INFO)
+        logger.addHandler(sh)
+    return logger
 
 
 def generate_ini_from_yaml(yaml_path, output_ini_path, overrides, channel_overrides=None):
@@ -146,7 +169,7 @@ def find_latest_run_files(output_dir):
     )
 
 
-def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_quit=True):
+def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_quit=True, logger=None):
     """Run WaveDemo_x743.exe with provided ini and optional overrides, streaming stdout."""
     cmd = [exe_path]
     if ini_path:
@@ -157,6 +180,8 @@ def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_q
         cmd.extend(['--output-path', output_path])
 
     # Start process and stream output line-by-line
+    if logger:
+        logger.info(f"Starting WaveDemo: exe={exe_path}, ini={ini_path}, batch_mode={batch_mode}, output_path={output_path}")
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -172,7 +197,8 @@ def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_q
     def keyboard_quit_listener():
         if not enable_quit:
             return
-        print("[Runner] Press 'q' + Enter to request graceful stop...")
+        if logger:
+            logger.info("Press 'q' + Enter to request graceful stop...")
         try:
             for line in sys.stdin:
                 if line.strip().lower() == 'q':
@@ -180,9 +206,11 @@ def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_q
                         proc.stdin.write('q\n')
                         proc.stdin.flush()
                         stop_flag['stopped'] = True
-                        print('[Runner] Sent quit command to WaveDemo.')
+                        if logger:
+                            logger.info('Sent quit command to WaveDemo.')
                     except Exception as e:
-                        print(f"[Runner] Failed to send quit: {e}")
+                        if logger:
+                            logger.error(f"Failed to send quit: {e}")
                     break
         except Exception:
             pass
@@ -194,48 +222,83 @@ def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_q
     try:
         # Read stdout live
         for line in proc.stdout:
-            print(line, end='')
+            if logger:
+                logger.info(line.rstrip())
             stdout_lines.append(line)
         # After stdout closes, read remaining stderr
         err = proc.stderr.read() or ''
         if err:
             # Print stderr at the end to avoid interleaving
-            sys.stderr.write(err)
+            if logger:
+                for el in err.splitlines():
+                    logger.error(el)
             stderr_lines.append(err)
     finally:
         proc.wait()
+    if logger:
+        logger.info(f"WaveDemo finished with code {proc.returncode}")
     return proc.returncode, ''.join(stdout_lines), ''.join(stderr_lines)
 
 
-def get_current_hv():
-    """Query CAEN HV monitor (vmon) via caen-hv CLI and return HV value as float.
+def get_current_hv(hv_device=None, hv_baudrate=None, hv_timeout=None, hv_channel=None):
+    """Query CAEN HV monitor (vmon) via caen-hv CLI and return HV value as negative string.
 
-    Returns 0 on failure.
+    Returns empty string on failure.
     """
     try:
         buf = StringIO()
-        # Emulate 'caen-hv mon vmon'
         argv_backup = sys.argv
-        sys.argv = ['caen-hv', 'mon', 'vmon']
+        argv = ['caen-hv']
+        if hv_device:
+            argv += ['--device', str(hv_device)]
+        if hv_baudrate:
+            argv += ['--baudrate', str(hv_baudrate)]
+        if hv_timeout:
+            argv += ['--timeout', str(hv_timeout)]
+        if hv_channel is not None:
+            argv += ['--channel', str(hv_channel)]
+        argv += ['mon', 'vmon']
+        sys.argv = argv
+        if hv_device or hv_baudrate or hv_timeout or hv_channel:
+            logging.getLogger('dt5743_runner').info(f"Query HV with params device={hv_device}, baud={hv_baudrate}, timeout={hv_timeout}, channel={hv_channel}")
         with contextlib.redirect_stdout(buf):
             caen_hv_main()
         sys.argv = argv_backup
         output = buf.getvalue()
-        # Try to find numeric HV in output
-        # Expect lines like: VMON: -2000.0 V or similar
+        import re
         for line in output.splitlines():
             l = line.strip().lower()
             if 'vmon' in l:
-                # Extract number before 'v'
-                # Remove units and non-numeric chars except sign and dot
-                import re
                 m = re.search(r"[-+]?\d+(?:\.\d+)?", line)
                 if m:
-                    return -1 * float(m.group(0).replace(';', ''))
-        # Fallback: return whole output trimmed
-        return -1 * float(output.strip().replace(';', ''))
+                    try:
+                        val = float(m.group(0))
+                        if val > 0:
+                            val = -val
+                        if val.is_integer():
+                            parsed = str(int(val))
+                        else:
+                            parsed = f"{val:.3f}".rstrip('0').rstrip('.')
+                        logging.getLogger('dt5743_runner').info(f"Parsed HV value: {parsed}")
+                        return parsed
+                    except Exception:
+                        raw = m.group(0)
+                        return '-' + raw.lstrip('+') if not raw.startswith('-') else raw
+        m2 = re.search(r"[-+]?\d+(?:\.\d+)?", output)
+        if m2:
+            try:
+                val = float(m2.group(0))
+                if val > 0:
+                    val = -val
+                if val.is_integer():
+                    return str(int(val))
+                return f"{val:.3f}".rstrip('0').rstrip('.')
+            except Exception:
+                raw = m2.group(0)
+                return '-' + raw.lstrip('+') if not raw.startswith('-') else raw
+        return ''
     except Exception:
-        return 0
+        return ''
 
 
 def main():
@@ -262,6 +325,11 @@ def main():
     parser.add_argument('--pmt', default='HAMAMATSU_R4998', help='PMT model name for run_info header')
     parser.add_argument('--source', default='BKG', help='Source label for run_info header')
     parser.add_argument('--scintilator', default='RMPS470', help='Scintilator label for run_info header')
+    # CAEN HV connection options passthrough
+    parser.add_argument('--hv-device', help='Serial device for CAEN HV (e.g., COM3 or /dev/ttyUSB0)')
+    parser.add_argument('--hv-baudrate', type=int, default=9600, help='Baudrate for CAEN HV serial (default: 9600)')
+    parser.add_argument('--hv-timeout', type=float, help='Timeout seconds for CAEN HV communication')
+    parser.add_argument('--hv-channel', type=int, help='Target CAEN HV channel to operate on')
     args = parser.parse_args()
 
     # Ensure PyYAML availability
@@ -307,18 +375,39 @@ def main():
 
     # Generate INI
     ini_path = generate_ini_from_yaml(args.yaml, ini_out_path, overrides, channel_overrides)
-    print(f"Generated INI: {os.path.abspath(ini_path)}")
+    logger = setup_logger(args.data_output)
+    logger.info(f"Generated INI: {os.path.abspath(ini_path)}")
 
     # Optionally set HV via caen-hv
     if args.set_hv is not None:
         try:
             # Call caen-hv main with args-like emulation
             sys_argv_backup = sys.argv
-            sys.argv = ['caen-hv', '--set', str(args.set_hv)] + (['--check'] if args.check_hv else [])
+            hv_argv = ['caen-hv']
+            if args.hv_device:
+                hv_argv += ['--device', str(args.hv_device)]
+            if args.hv_baudrate:
+                hv_argv += ['--baudrate', str(args.hv_baudrate)]
+            if args.hv_timeout is not None:
+                hv_argv += ['--timeout', str(args.hv_timeout)]
+            if args.hv_channel is not None:
+                hv_argv += ['--channel', str(args.hv_channel)]
+            # Correct HV set syntax: set vset --val <HV>
+            hv_argv += ['set', 'vset', '--val', str(args.set_hv)]
+            sys.argv = hv_argv
+            logger.info(f"Setting HV via command: caen-hv set vset --val {args.set_hv} (device={args.hv_device}, baud={args.hv_baudrate}, timeout={args.hv_timeout}, channel={args.hv_channel})")
             caen_hv_main()
+            # Optional check/monitor after set
+            if args.check_hv:
+                buf = StringIO()
+                sys.argv = hv_argv[:1] + hv_argv[1:hv_argv.index('set')] + ['mon', 'vmon']
+                with contextlib.redirect_stdout(buf):
+                    caen_hv_main()
+                for ln in buf.getvalue().splitlines():
+                    logger.info(ln)
             sys.argv = sys_argv_backup
         except Exception as e:
-            print(f"Warning: HV set/check failed: {e}")
+            logger.error(f"HV set/check failed: {e}")
 
     # Run WaveDemo in batch mode
     code, out, err = run_wavedemo(
@@ -326,20 +415,25 @@ def main():
         ini_path,
         batch_mode=args.batch_mode,
         output_path=args.data_output,
+        logger=logger,
     )
     if code != 0:
-        print('WaveDemo_x743.exe exited with error code:', code)
+        logger.error(f"WaveDemo_x743.exe exited with error code: {code}")
         if err:
-            print(err)
+            for el in err.splitlines():
+                logger.error(el)
     else:
-        print('WaveDemo completed successfully.')
-    if out:
-        print(out)
+        logger.info('WaveDemo completed successfully.')
 
     # Find generated run_info and prepend setup header
     txt_path, info_path = find_latest_run_files(args.data_output)
     # Determine PMT_HV from monitor if available; otherwise fall back to --set-hv
-    hv_str = get_current_hv()
+    hv_str = get_current_hv(
+        hv_device=args.hv_device,
+        hv_baudrate=args.hv_baudrate,
+        hv_timeout=args.hv_timeout,
+        hv_channel=args.hv_channel,
+    )
     if not hv_str:
         hv_str = f"{int(args.set_hv) if args.set_hv is not None else ''}"
     setup = {
@@ -351,11 +445,11 @@ def main():
     if info_path:
         changed = prepend_setup_to_run_info(info_path, setup)
         if changed:
-            print(f"Prepended setup header to: {info_path}")
+            logger.info(f"Prepended setup header to: {info_path}")
         else:
-            print(f"Setup header already present or run_info missing: {info_path}")
+            logger.info(f"Setup header already present or run_info missing: {info_path}")
     else:
-        print('No run_info file found to modify.')
+        logger.warning('No run_info file found to modify.')
 
 
 if __name__ == '__main__':

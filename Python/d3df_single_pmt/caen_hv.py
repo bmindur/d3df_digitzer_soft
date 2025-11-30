@@ -63,7 +63,7 @@ def main():
     parser.add_argument('cmd', help='Command (SET / MON)')
     parser.add_argument('par', help='Parameter (ON OFF VMON VSET)')
     parser.add_argument(
-        '--val', help='Optional value (e.g. 200.0)', default=None
+        '--val', type=float, help='Optional value (e.g. 200.0)', default=None
     )
     parser.add_argument(
         '--channel', default='1', help='HV channel (default 1)'
