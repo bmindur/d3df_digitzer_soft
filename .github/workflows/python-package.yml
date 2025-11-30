@@ -52,6 +52,6 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       uses: actions/upload-artifact@v4
       with:
-        name: python-dist-matrix.python−version−{{ github.ref_name }}
+        name: d3df-single-pmt--${{ matrix.python-version }}
         path: Python/dist/*
             
