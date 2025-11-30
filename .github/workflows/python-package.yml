@@ -55,7 +55,7 @@ jobs:
         name: d3df-single-pmt-python-${{ matrix.python-version }}
         path: Python/dist/*
     - name: Release upload
-      # if: startsWith(github.ref, 'refs/tags/')
+      if: startsWith(github.ref, 'refs/tags/')
       # uses: softprops/action-gh-release@v2
       # with:
       #   files: Python/dist/*
