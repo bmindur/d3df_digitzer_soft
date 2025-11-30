@@ -1,5 +1,36 @@
 (function(){
   const el = id => document.getElementById(id);
+  // Theme handling
+  const themeSelect = document.getElementById('theme_select');
+  const savedTheme = localStorage.getItem('ui_theme');
+  function applyTheme(mode){
+    document.body.classList.remove('theme-dark','theme-light');
+    if(mode === 'dark'){ document.body.classList.add('theme-dark'); }
+    else if(mode === 'light'){ document.body.classList.add('theme-light'); }
+    else { /* system: rely on prefers-color-scheme */ }
+  }
+  const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initialTheme = savedTheme || 'system';
+  applyTheme(initialTheme === 'system' ? (systemPrefersDark ? 'dark' : 'light') : initialTheme);
+  if(themeSelect){
+    themeSelect.value = savedTheme || 'system';
+    themeSelect.addEventListener('change', function(){
+      const val = themeSelect.value;
+      localStorage.setItem('ui_theme', val);
+      applyTheme(val === 'system' ? (systemPrefersDark ? 'dark' : 'light') : val);
+      // refresh chart colors after theme change
+      cvars = chartColors();
+      hvChart.data.datasets[0].borderColor = cvars.hv;
+      evChart.data.datasets[0].borderColor = cvars.events;
+      rateChart.data.datasets[0].borderColor = cvars.rate;
+      [hvChart, evChart, rateChart].forEach(ch => {
+        const x = ch.options.scales.x; const y = ch.options.scales.y;
+        if(x){ if(x.title) x.title.color = cvars.fg; if(x.ticks) x.ticks.color = cvars.fg; if(x.grid) x.grid.color = cvars.border; }
+        if(y){ if(y.title) y.title.color = cvars.fg; if(y.ticks) y.ticks.color = cvars.fg; if(y.grid) y.grid.color = cvars.border; }
+        ch.update();
+      });
+    });
+  }
   const hvPoints = [];
   const evPoints = [];
   const ratePoints = [];
@@ -90,9 +121,12 @@
   }
 
   // Charts
-  const hvChart = new Chart(el('chart_hv'), { type:'line', data:{ datasets:[{ label:'HV (V)', data:hvPoints, borderColor:'#2a6', tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)'} }, y:{ title:{ display:true, text:'V'} } } } });
-  const evChart = new Chart(el('chart_events'), { type:'line', data:{ datasets:[{ label:'Events', data:evPoints, borderColor:'#26c', tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)'} }, y:{ beginAtZero:true } } } });
-  const rateChart = new Chart(el('chart_rate'), { type:'line', data:{ datasets:[{ label:'Rate (1/s)', data:ratePoints, borderColor:'#c62', tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)'} }, y:{ beginAtZero:true } } } });
+  // Charts (theme-aware colors with distinct colors per chart)
+  function chartColors(){ const cs = getComputedStyle(document.body); return { fg: cs.getPropertyValue('--fg').trim()||'#111', border: cs.getPropertyValue('--border').trim()||'#ccc', hv: '#22aa66', events: '#2663ff', rate: '#ff8822' }; }
+  let cvars = chartColors();
+  const hvChart = new Chart(el('chart_hv'), { type:'line', data:{ datasets:[{ label:'HV (V)', data:hvPoints, borderColor:cvars.hv, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ title:{ display:true, text:'V', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
+  const evChart = new Chart(el('chart_events'), { type:'line', data:{ datasets:[{ label:'Events', data:evPoints, borderColor:cvars.events, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ beginAtZero:true, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
+  const rateChart = new Chart(el('chart_rate'), { type:'line', data:{ datasets:[{ label:'Rate (1/s)', data:ratePoints, borderColor:cvars.rate, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ beginAtZero:true, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
 
   // HV websocket
   let wsHV = null;
@@ -195,6 +229,11 @@
             d.runs.forEach((r, idx) => {
               const tr = document.createElement('tr');
               const ts = (typeof r.timestamp === 'number') ? new Date(r.timestamp * 1000).toLocaleTimeString() : '';
+              // Calculate rate as events/duration
+              let rateCalc = '';
+              if(r.events !== null && r.events !== undefined && r.duration !== null && r.duration !== undefined && r.duration > 0){
+                rateCalc = (r.events / r.duration).toFixed(2);
+              }
               const cells = [
                 idx + 1,
                 ts,
@@ -204,7 +243,7 @@
                 (r.threshold !== null && r.threshold !== undefined) ? r.threshold : '',
                 (r.duration !== null && r.duration !== undefined) ? Number(r.duration).toFixed(1) : '',
                 (r.events !== null && r.events !== undefined) ? r.events : '',
-                (r.rate !== null && r.rate !== undefined) ? Number(r.rate).toFixed(2) : '',
+                rateCalc,
                 r.run_info || ''
               ];
               cells.forEach(val => { const td = document.createElement('td'); td.textContent = String(val); tr.appendChild(td); });
