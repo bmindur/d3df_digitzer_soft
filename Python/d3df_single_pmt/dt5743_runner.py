@@ -136,7 +136,7 @@ def prepend_setup_to_run_info(run_info_path, setup):
         f"PMT = {setup.get('pmt', '')}\n"
         f"PMT_HV = {setup.get('pmt_hv', '')}\n"
         f"SOURCE = {setup.get('source', '')}\n"
-        f"SCINTILATOR = {setup.get('scintilator', '')}\n\n"
+        f"SCINTILLATOR = {setup.get('scintillator', '')}\n\n"
     )
     if existing.startswith(header):
         return False
@@ -190,6 +190,8 @@ def run_wavedemo(exe_path, ini_path, batch_mode=None, output_path=None, enable_q
         bufsize=1,
         universal_newlines=True,
     )
+    if logger:
+        logger.info("WaveDemo started; streaming output and waiting for completion...")
     stdout_lines = []
     stderr_lines = []
     stop_flag = {'stopped': False}
@@ -262,6 +264,7 @@ def get_current_hv(hv_device=None, hv_baudrate=None, hv_timeout=None, hv_channel
         if hv_device or hv_baudrate or hv_timeout or hv_channel:
             logging.getLogger('dt5743_runner').info(f"Query HV with params device={hv_device}, baud={hv_baudrate}, timeout={hv_timeout}, channel={hv_channel}")
         with contextlib.redirect_stdout(buf):
+            logging.getLogger('dt5743_runner').info("Querying current HV (VMON); waiting for response...")
             caen_hv_main()
         sys.argv = argv_backup
         output = buf.getvalue()
@@ -324,7 +327,7 @@ def main():
     parser.add_argument('--check-hv', action='store_true', help='After setting, query and print current HV')
     parser.add_argument('--pmt', default='HAMAMATSU_R4998', help='PMT model name for run_info header')
     parser.add_argument('--source', default='BKG', help='Source label for run_info header')
-    parser.add_argument('--scintilator', default='RMPS470', help='Scintilator label for run_info header')
+    parser.add_argument('--scintillator', default='RMPS470', help='Scintillator label for run_info header')
     # CAEN HV connection options passthrough
     parser.add_argument('--hv-device', help='Serial device for CAEN HV (e.g., COM3 or /dev/ttyUSB0)')
     parser.add_argument('--hv-baudrate', type=int, default=9600, help='Baudrate for CAEN HV serial (default: 9600)')
@@ -405,11 +408,13 @@ def main():
                     caen_hv_main()
                 for ln in buf.getvalue().splitlines():
                     logger.info(ln)
+            logger.info("HV set/check complete.")
             sys.argv = sys_argv_backup
         except Exception as e:
             logger.error(f"HV set/check failed: {e}")
 
     # Run WaveDemo in batch mode
+    logger.info("Launching WaveDemo and waiting for it to finish...")
     code, out, err = run_wavedemo(
         args.exe,
         ini_path,
@@ -440,7 +445,7 @@ def main():
         'pmt': args.pmt,
         'pmt_hv': hv_str,
         'source': args.source,
-        'scintilator': args.scintilator,
+        'scintillator': args.scintillator,
     }
     if info_path:
         changed = prepend_setup_to_run_info(info_path, setup)

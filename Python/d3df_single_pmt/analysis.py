@@ -25,7 +25,7 @@ def load_hdf5_data(hdf5_file):
                 for k in [
                     'pmt_hv',
                     'source',
-                    'scintilator',
+                    'scintillator',
                     'trigger_threshold_common',
                 ]
             )
@@ -256,7 +256,7 @@ def analyze_folder(folder_path, pattern='.h5', align=True):
                 'amplitude': t.get('amplitude', np.nan), 'rise_samples': t.get('rise_time', -1), 'fall_samples': t.get('fall_time', -1),
                 'width_samples': t.get('pulse_width', -1), 'rise_time_ns': t.get('rise_time_ns', np.nan), 'fall_time_ns': t.get('fall_time_ns', np.nan),
                 'pulse_width_ns': t.get('pulse_width_ns', np.nan), 'pmt_hv': meta.get('pmt_hv', np.nan), 'source': meta.get('source', ''),
-                'scintilator': meta.get('scintilator', ''), 'trigger_threshold_common': meta.get('trigger_threshold_common', np.nan)
+                'scintillator': meta.get('scintillator', ''), 'trigger_threshold_common': meta.get('trigger_threshold_common', np.nan)
             }
             results.append(summary)
     return pd.DataFrame(results)

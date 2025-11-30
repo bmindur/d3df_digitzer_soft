@@ -6,7 +6,7 @@ CAEN DT5743 waveform CSV (Wave_0_0.txt) to HDF5 converter, analysis, and plottin
 - Converts waveform CSV files produced by DT5743 digitizer into compressed HDF5.
 - Extracts timestamps, energies, ADC samples.
 - Parses `run_info` text to attach experimental metadata as HDF5 attributes:
-  - `pmt_hv`, `source`, `scintilator`
+  - `pmt_hv`, `source`, `scintillator`
   - `trigger_threshold_common` and per-channel thresholds `trigger_threshold_boardX_chY`
 - Provides Python API and CLI tools for conversion, analysis, and plotting.
 - Pulse alignment, normalization, and timing analysis (rise/fall/width in ns).

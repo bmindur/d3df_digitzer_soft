@@ -64,7 +64,7 @@ def plot_adc_overlay(
         max_pulses: maximum number of pulses to plot (None = all)
         folder_path: folder to save the plot
         sampling_rate: sampling rate in Hz (if None, uses sample points)
-        metadata: metadata dictionary with scintilator, source, pmt_hv
+        metadata: metadata dictionary with scintillator, source, pmt_hv
     """
     if ADC_df is None or ADC_df.empty:
         print("No ADC DataFrame available for overlay")
@@ -108,8 +108,8 @@ def plot_adc_overlay(
     title = f'ADC Overlay - {n_pulses} Pulses'
     if metadata:
         meta_parts = []
-        if metadata.get('scintilator'):
-            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('scintillator'):
+            meta_parts.append(f"Scint: {metadata['scintillator']}")
         if metadata.get('source'):
             meta_parts.append(f"Source: {metadata['source']}")
         if metadata.get('pmt_hv'):
@@ -125,8 +125,8 @@ def plot_adc_overlay(
     # Build filename with metadata
     filename_parts = [prefix, 'overlay']
     if metadata:
-        if metadata.get('scintilator'):
-            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('scintillator'):
+            filename_parts.append(str(metadata['scintillator']).replace(' ', '_'))
         if metadata.get('source'):
             filename_parts.append(str(metadata['source']).replace(' ', '_'))
         if metadata.get('pmt_hv'):
@@ -161,7 +161,7 @@ def plot_adc_diagram_advanced(
         folder_path: folder to save the plot
         align_data: whether to align pulses by peak position
         sampling_rate: sampling rate in Hz (if None, uses sample points)
-        metadata: metadata dictionary with scintilator, source, pmt_hv
+        metadata: metadata dictionary with scintillator, source, pmt_hv
     """
     if ADC_df is None:
         print("No ADC DataFrame available for advanced diagram")
@@ -189,8 +189,8 @@ def plot_adc_diagram_advanced(
     title = f'ADC Diagram Analysis: {prefix}'
     if metadata:
         meta_parts = []
-        if metadata.get('scintilator'):
-            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('scintillator'):
+            meta_parts.append(f"Scint: {metadata['scintillator']}")
         if metadata.get('source'):
             meta_parts.append(f"Source: {metadata['source']}")
         if metadata.get('pmt_hv'):
@@ -293,8 +293,8 @@ def plot_adc_diagram_advanced(
     # Build filename with metadata
     filename_parts = [prefix, 'adv', norm_suffix]
     if metadata:
-        if metadata.get('scintilator'):
-            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('scintillator'):
+            filename_parts.append(str(metadata['scintillator']).replace(' ', '_'))
         if metadata.get('source'):
             filename_parts.append(str(metadata['source']).replace(' ', '_'))
         if metadata.get('pmt_hv'):
@@ -319,7 +319,7 @@ def plot_pulse_timing_analysis(
         prefix: prefix for saving the plot
         save_plot: whether to save the plot
         folder_path: folder to save the plot
-        metadata: metadata dictionary with scintilator, source, pmt_hv
+        metadata: metadata dictionary with scintillator, source, pmt_hv
     """
     if timing_info is None:
         print("No timing information available for plotting")
@@ -462,8 +462,8 @@ def plot_pulse_timing_analysis(
     title = f'Pulse Timing Analysis - {prefix}{title_suffix}'
     if metadata:
         meta_parts = []
-        if metadata.get('scintilator'):
-            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('scintillator'):
+            meta_parts.append(f"Scint: {metadata['scintillator']}")
         if metadata.get('source'):
             meta_parts.append(f"Source: {metadata['source']}")
         if metadata.get('pmt_hv'):
@@ -480,8 +480,8 @@ def plot_pulse_timing_analysis(
         # Build filename with metadata
         filename_parts = [prefix, 'time']
         if metadata:
-            if metadata.get('scintilator'):
-                filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+            if metadata.get('scintillator'):
+                filename_parts.append(str(metadata['scintillator']).replace(' ', '_'))
             if metadata.get('source'):
                 filename_parts.append(str(metadata['source']).replace(' ', '_'))
             if metadata.get('pmt_hv'):
@@ -512,8 +512,8 @@ def plot_pulse_timing_analysis(
     zoom_title = f'Pulse Timing Zoom - {prefix}'
     if metadata:
         meta_parts = []
-        if metadata.get('scintilator'):
-            meta_parts.append(f"Scint: {metadata['scintilator']}")
+        if metadata.get('scintillator'):
+            meta_parts.append(f"Scint: {metadata['scintillator']}")
         if metadata.get('source'):
             meta_parts.append(f"Source: {metadata['source']}")
         if metadata.get('pmt_hv'):
@@ -565,8 +565,8 @@ def plot_pulse_timing_analysis(
     # Build filename with metadata
     filename_parts = [prefix, 'time_zoom']
     if metadata:
-        if metadata.get('scintilator'):
-            filename_parts.append(str(metadata['scintilator']).replace(' ', '_'))
+        if metadata.get('scintillator'):
+            filename_parts.append(str(metadata['scintillator']).replace(' ', '_'))
         if metadata.get('source'):
             filename_parts.append(str(metadata['source']).replace(' ', '_'))
         if metadata.get('pmt_hv'):

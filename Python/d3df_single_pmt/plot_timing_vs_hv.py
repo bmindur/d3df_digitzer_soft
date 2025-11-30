@@ -70,8 +70,8 @@ def plot_timing_vs_hv(df, output_folder='.'):
     
     # Group columns
     group_cols = []
-    if 'scintilator' in df.columns:
-        group_cols.append('scintilator')
+    if 'scintillator' in df.columns:
+        group_cols.append('scintillator')
     if 'source' in df.columns:
         group_cols.append('source')
     
@@ -268,8 +268,8 @@ def main():
     if 'pmt_hv' in df.columns:
         hv_values = df['pmt_hv'].dropna().unique()
         print(f"  HV values: {sorted(hv_values)}")
-    if 'scintilator' in df.columns:
-        scints = df['scintilator'].dropna().unique()
+    if 'scintillator' in df.columns:
+        scints = df['scintillator'].dropna().unique()
         print(f"  Scintillators: {list(scints)}")
     if 'source' in df.columns:
         sources = df['source'].dropna().unique()

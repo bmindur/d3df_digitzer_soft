@@ -10,7 +10,7 @@ def parse_run_info(run_info_path):
     """Parse a run_info file extracting key experimental parameters.
 
     Extracts:
-      PMT_HV, SOURCE, SCINTILATOR,
+      PMT_HV, SOURCE, SCINTILLATOR,
       TRIGGER_THRESHOLD (common section as trigger_threshold_common),
       TRIGGER_THRESHOLD for individual channels (trigger_threshold_board{b}_ch{c}).
 
@@ -26,7 +26,7 @@ def parse_run_info(run_info_path):
 
     p_pmt_hv = re.compile(r'^\s*PMT_HV\s*=\s*([+-]?\d+)')
     p_source = re.compile(r'^\s*SOURCE\s*=\s*(.+)')
-    p_scint = re.compile(r'^\s*SCINTILATOR\s*=\s*(.+)')
+    p_scint = re.compile(r'^\s*SCINTILLATOR\s*=\s*(.+)')
     p_trigger = re.compile(r'^\s*TRIGGER_THRESHOLD\s*=\s*([+-]?[0-9]*\.?[0-9]+(?:[Ee][+-]?\d+)?)')
     p_section = re.compile(r'^\s*\[(.+?)\]\s*$')
     p_board_channel = re.compile(r'BOARD\s*(\d+)\s*-\s*CHANNEL\s*(\d+)', re.IGNORECASE)
@@ -48,8 +48,8 @@ def parse_run_info(run_info_path):
                 if m_src and 'source' not in results:
                     results['source'] = m_src.group(1).strip()
                 m_sci = p_scint.match(line)
-                if m_sci and 'scintilator' not in results:
-                    results['scintilator'] = m_sci.group(1).strip()
+                if m_sci and 'scintillator' not in results:
+                    results['scintillator'] = m_sci.group(1).strip()
                 m_trig = p_trigger.match(line)
                 if m_trig:
                     val = float(m_trig.group(1))
@@ -97,7 +97,7 @@ def load_hdf5_data(hdf5_file):
                 metadata[key] = f.attrs[key]
 
             # Attempt to enrich metadata with run_info parsing if fields missing
-            need_run_info = any(k not in metadata for k in ['pmt_hv', 'source', 'scintilator', 'trigger_threshold_common'])
+            need_run_info = any(k not in metadata for k in ['pmt_hv', 'source', 'scintillator', 'trigger_threshold_common'])
             run_info_path_candidates = []
             if 'run_info_file' in metadata:
                 run_info_path_candidates.append(str(metadata['run_info_file']))
@@ -130,7 +130,7 @@ def load_hdf5_data(hdf5_file):
             print(f"  Source file: {metadata.get('source_file', 'Unknown')}")
             if 'run_info_file' in metadata:
                 print(f"  Run info file: {metadata.get('run_info_file')}")
-            for extra_key in ['pmt_hv','source','scintilator','trigger_threshold_common']:
+            for extra_key in ['pmt_hv','source','scintillator','trigger_threshold_common']:
                 if extra_key in metadata:
                     print(f"  {extra_key}: {metadata[extra_key]}")
             
@@ -1346,7 +1346,7 @@ def main():
                     'pulse_width_ns': float(timing_info.get('pulse_width_ns')) if timing_info.get('pulse_width_ns') is not None else np.nan,
                     'pmt_hv': int(metadata.get('pmt_hv')) if 'pmt_hv' in metadata else np.nan,
                     'source': str(metadata.get('source')) if 'source' in metadata else '',
-                    'scintilator': str(metadata.get('scintilator')) if 'scintilator' in metadata else '',
+                    'scintillator': str(metadata.get('scintillator')) if 'scintillator' in metadata else '',
                     'trigger_threshold_common': float(metadata.get('trigger_threshold_common')) if 'trigger_threshold_common' in metadata else np.nan,
                     'run_info_file': str(metadata.get('run_info_file')) if 'run_info_file' in metadata else ''
                 }

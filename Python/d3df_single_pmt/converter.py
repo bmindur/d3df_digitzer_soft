@@ -23,7 +23,7 @@ def parse_run_info(run_info_path):
     common_threshold = None
     p_pmt_hv = re.compile(r'^\s*PMT_HV\s*=\s*([+-]?\d+)')
     p_source = re.compile(r'^\s*SOURCE\s*=\s*(.+)')
-    p_scint = re.compile(r'^\s*SCINTILATOR\s*=\s*(.+)')
+    p_scint = re.compile(r'^\s*SCINTILLATOR\s*=\s*(.+)')
     p_trigger = re.compile(r'^\s*TRIGGER_THRESHOLD\s*=\s*([+-]?[0-9]*\.?[0-9]+(?:[Ee][+-]?\d+)?)')
     p_section = re.compile(r'^\s*\[(.+?)\]\s*$')
     p_board_channel = re.compile(r'BOARD\s*(\d+)\s*-\s*CHANNEL\s*(\d+)', re.IGNORECASE)
@@ -44,8 +44,8 @@ def parse_run_info(run_info_path):
                 if m_src and 'source' not in results:
                     results['source'] = m_src.group(1).strip()
                 m_sci = p_scint.match(line)
-                if m_sci and 'scintilator' not in results:
-                    results['scintilator'] = m_sci.group(1).strip()
+                if m_sci and 'scintillator' not in results:
+                    results['scintillator'] = m_sci.group(1).strip()
                 m_trig = p_trigger.match(line)
                 if m_trig:
                     val = float(m_trig.group(1))
