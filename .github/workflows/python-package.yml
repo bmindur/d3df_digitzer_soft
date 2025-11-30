@@ -44,8 +44,8 @@ jobs:
       run: |
         # stop the build if there are Python syntax errors or undefined names
         python -m build Python
-    - name: Release upload
-      uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
       with:
-        files: Python/dist/*
+        name: python-dist
+        path: Python/dist/*        
