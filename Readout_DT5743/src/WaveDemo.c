@@ -2365,8 +2365,8 @@ int CheckBatchModeConditions(WaveDemoRun_t *WDrun, WaveDemoConfig_t *WDcfg) {
 			return 0;
 		}
 
-		// Print progress every 10 seconds
-		if (elapsedSeconds % 10 == 0 && elapsedSeconds > 0) {
+		// Print progress every 1 second
+		if (elapsedSeconds % 1 == 0 && elapsedSeconds > 0) {
 			static uint64_t lastPrintTime = 0;
 			if (elapsedSeconds != lastPrintTime) {
 				printf("Batch mode progress: %llu/%llu seconds, %llu events\n",

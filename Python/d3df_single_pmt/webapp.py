@@ -70,7 +70,7 @@ class MeasureStartRequest(BaseModel):
     repeat: Optional[int] = Field(None, description="Number of repeats for the full HV/threshold sweep; None = single, -1 = infinite loop")
     loop: bool = Field(False, description="If True, treat repeat None as 1; use repeat=-1 for infinite loop")
     hv_device: Optional[str] = None
-    hv_baudrate: Optional[int] = 9600
+    hv_baudrate: Optional[int] = None
     hv_timeout: Optional[float] = None
     hv_channel: Optional[int] = None
 
@@ -147,18 +147,43 @@ class MeasurementTask:
         self.current_hv = hv
         self.current_threshold = threshold
         cmd = self.build_runner_cmd(hv, threshold)
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
+        self.proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE,
+            universal_newlines=True,
+            bufsize=1,
+        )
         start = time.time()
         for line in self.proc.stdout:  # type: ignore
             with self.lock:
                 self.last_line = line.rstrip()
-                # Heuristic event parsing
-                if re.search(r"\b(event|events)\b", line, re.IGNORECASE):
-                    nums = re.findall(r"\b\d+\b", line)
-                    if nums:
-                        self.events = int(nums[-1])  # take last number as event count
+                
+                # Parse "Batch mode progress: 10/30 seconds, 107 events"
+                batch_match = re.search(r'Batch mode progress:\s*(\d+)/(\d+)\s*seconds,\s*(\d+)\s*events?', line, re.IGNORECASE)
+                if batch_match:
+                    elapsed_sec = int(batch_match.group(1))
+                    max_sec = int(batch_match.group(2))
+                    events = int(batch_match.group(3))
+                    self.events = events
+                    if elapsed_sec > 0:
+                        self.rate = events / elapsed_sec
+                    continue
+                
+                # Parse throughput line: "  0  0  |    9.44 Hz  100.00%   0.00%        320          9"
+                throughput_match = re.search(r'\|\s*([\d.]+)\s*Hz\s+[\d.]+%\s+[\d.]+%\s+(\d+)', line)
+                if throughput_match:
+                    rate_hz = float(throughput_match.group(1))
+                    total_events = int(throughput_match.group(2))
+                    self.events = total_events
+                    self.rate = rate_hz
+                    continue
+                
+                # Removed fallback generic event parsing
+                
                 elapsed = time.time() - self.start_time
-                if elapsed > 0:
+                if elapsed > 0 and self.events > 0:
                     self.rate = self.events / elapsed
             # Optional early stop check
             if not self.running:
@@ -189,7 +214,17 @@ class MeasurementTask:
             self.running = False
             if self.proc and self.proc.poll() is None:
                 try:
-                    self.proc.terminate()
+                    # Attempt graceful shutdown: send "q\nq\n" and wait a moment
+                    if self.proc.stdin:
+                        try:
+                            self.proc.stdin.write("q\nq\n")
+                            self.proc.stdin.flush()
+                        except Exception:
+                            pass
+                    time.sleep(1.0)
+                    # If still running, terminate
+                    if self.proc.poll() is None:
+                        self.proc.terminate()
                 except Exception:
                     pass
 
@@ -198,7 +233,13 @@ class MeasurementTask:
             # Build progress string like: "Batch mode progress: 20/30 seconds, 110 events"
             prog = None
             if self.req.max_time and self.req.max_time > 0:
-                prog = f"Batch mode progress: {int(time.time()-self.start_time)}/{self.req.max_time} seconds, {self.events} events"
+                elapsed_sec = int(time.time() - self.start_time)
+                remaining_sec = max(self.req.max_time - elapsed_sec, 0)
+                rate_val = self.rate if self.rate else 0.0
+                prog = (
+                    f"Batch progress: elapsed {elapsed_sec}s, remaining {remaining_sec}s, "
+                    f"events {self.events}, rate {rate_val:.2f} 1/s"
+                )
             return MeasureStatus(
                 id=self.id,
                 running=self.running,
@@ -306,7 +347,7 @@ def asyncio_sleep(seconds: float):
     return asyncio.sleep(seconds)
 
 # ---------------------- SIMPLE UI ----------------------
-INDEX_HTML = """<!doctype html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>Digitizer Web Interface</title><script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'></script><style>body{font-family:system-ui,Arial,sans-serif;margin:16px}h2{margin-top:24px}.row{display:flex;flex-wrap:wrap;gap:16px}.col{flex:1 1 400px;min-width:360px}fieldset{border:1px solid #ccc;padding:12px;border-radius:8px}label{display:block;margin-top:6px;font-size:.9rem}input,textarea{width:100%;padding:6px;margin-top:4px}button{margin-top:8px;padding:6px 10px}code{background:#f4f4f4;padding:2px 4px;border-radius:4px}canvas{max-height:320px}#log{white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px}.status-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:.75rem;font-weight:600}#hv_status.connected{background:#2a6;color:#fff}#hv_status.disconnected{background:#c22;color:#fff}</style></head><body><h1>Digitizer Web Interface</h1><div class='row'><div class='col'><fieldset><legend>HV Control</legend><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='-1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></fieldset></div><div class='col'><fieldset><legend>Measurement Control</legend><label>YAML path <input id='m_yaml' value='config.yaml'/></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Batch mode <input id='m_batch' type='number' value='2'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='-1800,-1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' placeholder='1'/></label><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>HV Plot</span><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_hv'></canvas></div><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Events Plot</span><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_events'></canvas></div></div><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Rate Plot</span><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_rate'></canvas></div><div class='col'><fieldset><legend>Log</legend><div id='log'></div></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
+INDEX_HTML = """<!doctype html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>Digitizer Web Interface</title><script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'></script><style>body{font-family:system-ui,Arial,sans-serif;margin:16px}h2{margin-top:24px}.row{display:flex;flex-wrap:wrap;gap:16px}.col{flex:1 1 400px;min-width:360px}fieldset{border:1px solid #ccc;padding:12px;border-radius:8px}label{display:block;margin-top:6px;font-size:.9rem}input,textarea{width:100%;padding:6px;margin-top:4px}button{margin-top:8px;padding:6px 10px}code{background:#f4f4f4;padding:2px 4px;border-radius:4px}canvas{max-height:320px}#log{white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px}.status-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:.75rem;font-weight:600}#hv_status.connected{background:#2a6;color:#fff}#hv_status.disconnected{background:#c22;color:#fff}.progress-wrap{margin-top:8px}.progress-labels{display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px}.progress-bar{width:100%;height:12px;background:#eee;border-radius:6px;overflow:hidden}.progress-bar>div{height:100%;background:#26c;width:0%}</style></head><body><h1>Digitizer Web Interface</h1><div class='row'><div class='col'><fieldset><legend>HV Control</legend><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></fieldset></div><div class='col'><fieldset><legend>Measurement Control</legend><label>YAML path <input id='m_yaml' value='config.yaml'/></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Batch mode <input id='m_batch' type='number' value='2'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='1800,1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' placeholder='1'/></label><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>HV Plot</span><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_hv'></canvas></div><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Events Plot</span><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_events'></canvas></div></div><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Rate Plot</span><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_rate'></canvas></div><div class='col'><fieldset><legend>Progress</legend><div class='progress-wrap'><div class='progress-labels'><span>Elapsed: <span id='prog_elapsed'>0s</span></span><span>Remaining: <span id='prog_remaining'>0s</span></span></div><div class='progress-bar'><div id='prog_bar'></div></div></div></fieldset><fieldset style='margin-top:12px'><legend>Log</legend><div id='log'></div></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
 
 @app.get('/static/app.js')
 def static_app_js():

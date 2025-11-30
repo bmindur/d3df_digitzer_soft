@@ -7,6 +7,15 @@
   const tx = () => (Date.now() - t0) / 1000.0;
   function appendLog(msg){ const area = el('log'); area.textContent += msg + '\n'; area.scrollTop = area.scrollHeight; }
 
+  // Clean incoming measurement log lines: remove timestamp, drop batch progress lines
+  function cleanMeasureLine(line){
+    if(!line) return null;
+    // Skip raw batch progress lines from WaveDemo
+    if(/Batch mode progres+s?/i.test(line)) return null;
+    // Strip leading timestamp: YYYY-MM-DD HH:MM:SS,mmm
+    return line.replace(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d{3}\s*/, '');
+  }
+
   // Charts
   const hvChart = new Chart(el('chart_hv'), { type:'line', data:{ datasets:[{ label:'HV (V)', data:hvPoints, borderColor:'#2a6', tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)'} }, y:{ title:{ display:true, text:'V'} } } } });
   const evChart = new Chart(el('chart_events'), { type:'line', data:{ datasets:[{ label:'Events', data:evPoints, borderColor:'#26c', tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)'} }, y:{ beginAtZero:true } } } });
@@ -27,7 +36,7 @@
     const baud = encodeURIComponent(el('hv_baud').value);
     const interval = Number(el('hv_interval').value) || 2;
     wsHV = new WebSocket('ws://' + location.host + '/ws/hv?interval=' + interval + '&device=' + dev + '&channel=' + ch + '&baudrate=' + baud);
-    wsHV.onopen = function(){ setHVStatus(true); };
+    wsHV.onopen = function(){ setHVStatus(true); appendLog('[HV] Monitoring started: MON VMON every ' + interval + 's'); };
     wsHV.onmessage = function(ev){
       try {
         const data = JSON.parse(ev.data);
@@ -36,12 +45,13 @@
           if(!Number.isNaN(y)){
             hvPoints.push({ x: tx(), y: y });
             hvChart.update();
+            appendLog('[HV] MON VMON -> ' + y);
           }
         }
         if(data.error){ appendLog('[HV] ' + data.error); }
       } catch(e) { /* ignore */ }
     };
-    wsHV.onclose = function(){ setHVStatus(false); if(hvMonitoring){ setTimeout(openHV, 3000); } };
+    wsHV.onclose = function(){ setHVStatus(false); appendLog('[HV] Monitoring stopped'); if(hvMonitoring){ setTimeout(openHV, 3000); } };
   }
   function stopHV(){ if(wsHV){ try{ wsHV.close(); }catch(e){} wsHV=null; } setHVStatus(false); }
   const toggleBtn = el('btn_hv_toggle');
@@ -60,8 +70,27 @@
     wsM.onmessage = function(ev){
       try {
         const d = JSON.parse(ev.data);
-        if(d.last_line){ appendLog(d.last_line); }
-        if(d.progress_line){ appendLog(d.progress_line); }
+        if(d.last_line){
+          const cleaned = cleanMeasureLine(d.last_line);
+          if(cleaned) appendLog(cleaned);
+        }
+        if(d.progress_line){
+          appendLog(d.progress_line);
+          // Parse: "Batch progress: elapsed Xs, remaining Ys, events N, rate R 1/s"
+          const m = d.progress_line.match(/elapsed\s+(\d+)s,\s+remaining\s+(\d+)s/);
+          if(m){
+            const el = document.getElementById('prog_elapsed');
+            const rl = document.getElementById('prog_remaining');
+            const bar = document.getElementById('prog_bar');
+            const elapsedSec = Number(m[1]);
+            const remainingSec = Number(m[2]);
+            const total = Math.max(elapsedSec + remainingSec, 1);
+            const pct = Math.min(100, Math.max(0, (elapsedSec / total) * 100));
+            if(el) el.textContent = elapsedSec + 's';
+            if(rl) rl.textContent = remainingSec + 's';
+            if(bar) bar.style.width = pct.toFixed(1) + '%';
+          }
+        }
         const xval = tx();
         if(typeof d.events === 'number'){ evPoints.push({ x: xval, y: d.events }); evChart.update(); }
         if(typeof d.rate === 'number'){ ratePoints.push({ x: xval, y: d.rate }); rateChart.update(); }
@@ -74,9 +103,11 @@
   el('btn_hv_set').onclick = async function(){
     try {
       console.log('HV set clicked');
+      appendLog('[HV] Sending SET VSET');
       const body = { value: Number(el('hv_value').value), device: el('hv_device').value, channel: el('hv_channel').value, baudrate: Number(el('hv_baud').value) };
       const res = await fetch('/hv/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await res.json();
+      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
     } catch(err){ console.error('HV set error', err); appendLog('HV set error: ' + err); }
   };
@@ -84,11 +115,13 @@
   el('btn_hv_read').onclick = async function(){
     try {
       console.log('HV read clicked');
+      appendLog('[HV] Sending MON VMON');
       const dev = encodeURIComponent(el('hv_device').value);
       const ch = encodeURIComponent(el('hv_channel').value);
       const baud = encodeURIComponent(el('hv_baud').value);
       const res = await fetch('/hv/read?device=' + dev + '&channel=' + ch + '&baudrate=' + baud);
       const j = await res.json();
+      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
     } catch(err){ console.error('HV read error', err); appendLog('HV read error: ' + err); }
   };
@@ -98,8 +131,10 @@
       console.log('HV send clicked');
       const valField = el('hv_val').value.trim();
       const body = { cmd: el('hv_cmd').value, par: el('hv_par').value, val: valField ? Number(valField) : null, device: el('hv_device').value, channel: el('hv_channel').value, baudrate: Number(el('hv_baud').value) };
+      appendLog('[HV] Sending ' + body.cmd + ' ' + body.par + (valField ? (' val=' + valField) : ''));
       const res = await fetch('/hv/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await res.json();
+      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
     } catch(err){ console.error('HV send error', err); appendLog('HV send error: ' + err); }
   };
