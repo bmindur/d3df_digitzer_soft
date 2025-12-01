@@ -143,7 +143,7 @@
     const baud = encodeURIComponent(el('hv_baud').value);
     const interval = Number(el('hv_interval').value) || 2;
     wsHV = new WebSocket('ws://' + location.host + '/ws/hv?interval=' + interval + '&device=' + dev + '&channel=' + ch + '&baudrate=' + baud);
-    wsHV.onopen = function(){ setHVStatus(true); appendLog('[HV] Monitoring started: MON VMON every ' + interval + 's'); };
+    wsHV.onopen = function(){ setHVStatus(true); };
     wsHV.onmessage = function(ev){
       try {
         const data = JSON.parse(ev.data);
@@ -152,13 +152,11 @@
           if(!Number.isNaN(y)){
             hvPoints.push({ x: tx(), y: y });
             hvChart.update();
-            appendLog('[HV] MON VMON -> ' + y);
           }
         }
-        if(data.error){ appendLog('[HV] ' + data.error); }
       } catch(e) { /* ignore */ }
     };
-    wsHV.onclose = function(){ setHVStatus(false); appendLog('[HV] Monitoring stopped'); if(hvMonitoring){ setTimeout(openHV, 3000); } };
+    wsHV.onclose = function(){ setHVStatus(false); if(hvMonitoring){ setTimeout(openHV, 3000); } };
   }
   function stopHV(){ if(wsHV){ try{ wsHV.close(); }catch(e){} wsHV=null; } setHVStatus(false); }
   const toggleBtn = el('btn_hv_toggle');
@@ -183,6 +181,22 @@
         }
         if(d.progress_line){
           appendLog(d.progress_line);
+        }
+        // Update runner log
+        if(d.runner_log && Array.isArray(d.runner_log)){
+          const runnerArea = document.getElementById('runner_log');
+          if(runnerArea){
+            runnerArea.textContent = d.runner_log.join('\n');
+            runnerArea.scrollTop = runnerArea.scrollHeight;
+          }
+        }
+        // Update HV log
+        if(d.hv_log && Array.isArray(d.hv_log)){
+          const hvLogArea = document.getElementById('hv_log');
+          if(hvLogArea){
+            hvLogArea.textContent = d.hv_log.join('\n');
+            hvLogArea.scrollTop = hvLogArea.scrollHeight;
+          }
         }
         // Progress bar and labels: show total elapsed/remaining
         const pe = document.getElementById('prog_elapsed');
@@ -259,27 +273,23 @@
   el('btn_hv_set').onclick = async function(){
     try {
       console.log('HV set clicked');
-      appendLog('[HV] Sending SET VSET');
       const body = { value: Number(el('hv_value').value), device: el('hv_device').value, channel: el('hv_channel').value, baudrate: Number(el('hv_baud').value) };
       const res = await fetch('/hv/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await res.json();
-      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
-    } catch(err){ console.error('HV set error', err); appendLog('HV set error: ' + err); }
+    } catch(err){ console.error('HV set error', err); }
   };
 
   el('btn_hv_read').onclick = async function(){
     try {
       console.log('HV read clicked');
-      appendLog('[HV] Sending MON VMON');
       const dev = encodeURIComponent(el('hv_device').value);
       const ch = encodeURIComponent(el('hv_channel').value);
       const baud = encodeURIComponent(el('hv_baud').value);
       const res = await fetch('/hv/read?device=' + dev + '&channel=' + ch + '&baudrate=' + baud);
       const j = await res.json();
-      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
-    } catch(err){ console.error('HV read error', err); appendLog('HV read error: ' + err); }
+    } catch(err){ console.error('HV read error', err); }
   };
 
   el('btn_hv_send').onclick = async function(){
@@ -287,12 +297,10 @@
       console.log('HV send clicked');
       const valField = el('hv_val').value.trim();
       const body = { cmd: el('hv_cmd').value, par: el('hv_par').value, val: valField ? Number(valField) : null, device: el('hv_device').value, channel: el('hv_channel').value, baudrate: Number(el('hv_baud').value) };
-      appendLog('[HV] Sending ' + body.cmd + ' ' + body.par + (valField ? (' val=' + valField) : ''));
       const res = await fetch('/hv/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await res.json();
-      appendLog('[HV] Response: ' + JSON.stringify(j));
       el('hv_result').innerHTML = 'Result: <code>' + JSON.stringify(j) + '</code>';
-    } catch(err){ console.error('HV send error', err); appendLog('HV send error: ' + err); }
+    } catch(err){ console.error('HV send error', err); }
   };
 
   el('btn_m_start').onclick = async function(){
@@ -342,6 +350,17 @@
   el('btn_clear_hv').onclick = function(){ hvPoints.length = 0; hvChart.update(); };
   el('btn_clear_events').onclick = function(){ evPoints.length = 0; evChart.update(); };
   el('btn_clear_rate').onclick = function(){ ratePoints.length = 0; rateChart.update(); };
+
+  // Clear log buttons
+  el('btn_clear_log').onclick = function(){ const logArea = el('log'); if(logArea) logArea.textContent = ''; };
+  el('btn_clear_hv_log').onclick = async function(){
+    try {
+      await fetch('/hv/clear_log', { method: 'POST' });
+      const hvLogArea = el('hv_log');
+      if(hvLogArea) hvLogArea.textContent = '';
+    } catch(err){ console.error('Clear HV log error', err); }
+  };
+  el('btn_clear_runner_log').onclick = function(){ const runnerLogArea = el('runner_log'); if(runnerLogArea) runnerLogArea.textContent = ''; };
 
   // Download run history
   const dlBtn = document.getElementById('btn_run_history_dl');

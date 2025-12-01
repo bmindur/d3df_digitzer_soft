@@ -31,6 +31,7 @@ import re
 import os
 from typing import Dict, List, Optional, Any
 import logging
+import psutil
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException, Query, Depends, status
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -41,6 +42,20 @@ from .caen_hv import send_caen_command
 
 app = FastAPI(title="Digitizer Web Interface", version="0.1.0")
 security = HTTPBasic()
+
+# Global HV lock and log to ensure one HV command at a time
+hv_lock = threading.Lock()
+hv_log_lines: List[str] = []
+
+def is_wavedemo_running() -> bool:
+    """Check if WaveDemo_x743.exe process is currently running."""
+    try:
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'] and 'wavedemo' in proc.info['name'].lower():
+                return True
+        return False
+    except Exception:
+        return False
 
 # Simple authentication - username and password from environment or defaults
 AUTH_USERNAME = os.getenv("DIGITIZER_USERNAME", "d3df")
@@ -122,6 +137,8 @@ class MeasureStatus(BaseModel):
     total_elapsed: Optional[int] = None  # total elapsed (all repeats)
     total_remaining: Optional[int] = None  # total remaining (all repeats)
     runs: List[Dict[str, Any]] = Field(default_factory=list)  # history of completed runs
+    runner_log: List[str] = Field(default_factory=list)  # dt5743_runner subprocess output
+    hv_log: List[str] = Field(default_factory=list)  # CAEN HV commands and monitoring
 
 # ---------------------- RUNTIME STATE ----------------------
 class MeasurementTask:
@@ -141,6 +158,7 @@ class MeasurementTask:
         self.repeat_total: Optional[int] = None
         self.last_line: Optional[str] = None
         self.log_lines: list[str] = []
+        self.runner_log_lines: list[str] = []  # separate log for dt5743_runner subprocess output
         self.runs: List[Dict[str, Any]] = []  # list of dicts capturing history of runs
         self.run_info_path: Optional[str] = None  # path to current run_info.txt file
         self.thread = threading.Thread(target=self.run_loop, daemon=True)
@@ -150,21 +168,86 @@ class MeasurementTask:
 
     def append_log(self, msg: str):
         self.log_lines.append(msg)
+        if len(self.log_lines) > 10000:
+            self.log_lines.pop(0)
         self.last_line = msg
 
-    def _read_hv(self) -> Optional[float]:
-        try:
-            resp = send_caen_command('MON', 'VMON', channel=str(self.req.hv_channel or '1'), device=self.req.hv_device or 'COM10', baudrate=self.req.hv_baudrate or 9600, timeout=self.req.hv_timeout or 1.0)
-            try:
-                return float(str(resp).replace(',', '.').strip())
-            except Exception:
-                return None
-        except Exception:
+    def append_hv_log(self, msg: str):
+        """Append message to global HV log with timestamp."""
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+        hv_log_lines.append(f"[{timestamp}] {msg}")
+        if len(hv_log_lines) > 10000:
+            hv_log_lines.pop(0)
+
+    def _read_hv(self, max_retries: int = 10, retry_delay: float = 2.0) -> Optional[float]:
+        """Read HV with retry logic. Returns HV value on success, None on failure after all retries."""
+        with hv_lock:  # Ensure one HV command at a time globally
+            for attempt in range(1, max_retries + 1):
+                try:
+                    self.append_hv_log(f"MON VMON (attempt {attempt}/{max_retries})")
+                    resp = send_caen_command('MON', 'VMON', channel=str(self.req.hv_channel or '1'), device=self.req.hv_device or 'COM10', baudrate=self.req.hv_baudrate or 9600, timeout=self.req.hv_timeout or 1.0)
+                    try:
+                        hv_value = float(str(resp).replace(',', '.').strip())
+                        self.append_hv_log(f"Response: {hv_value} V")
+                        if attempt > 1:
+                            logger.info(f"HV read successful on attempt {attempt}")
+                        return hv_value
+                    except Exception as parse_err:
+                        msg = f"Failed to parse HV response on attempt {attempt}/{max_retries}: {parse_err}"
+                        logger.warning(msg)
+                        self.append_hv_log(f"Parse error: {parse_err}")
+                        if attempt < max_retries:
+                            time.sleep(retry_delay)
+                        continue
+                except Exception as e:
+                    msg = f"Failed to read HV on attempt {attempt}/{max_retries}: {e}"
+                    logger.warning(msg)
+                    self.append_hv_log(f"Error: {e}")
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"Failed to read HV after {max_retries} attempts")
+                        return None
             return None
 
-    def wait_for_hv(self, target: float, tolerance: float = 0.5, max_wait: float = 30.0, poll_interval: float = 1.0) -> bool:
+    def _set_hv(self, value: float, max_retries: int = 10, retry_delay: float = 2.0) -> bool:
+        """Set HV with retry logic. Returns True on success, False on failure after all retries."""
+        with hv_lock:  # Ensure one HV command at a time globally
+            for attempt in range(1, max_retries + 1):
+                try:
+                    logger.info(f"Setting HV to {value} V (attempt {attempt}/{max_retries})...")
+                    self.append_hv_log(f"SET VSET {value} V (attempt {attempt}/{max_retries})")
+                    
+                    send_caen_command('SET', 'VSET', str(value), 
+                                    channel=str(self.req.hv_channel or '1'), 
+                                    device=self.req.hv_device or 'COM10', 
+                                    baudrate=self.req.hv_baudrate or 9600, 
+                                    timeout=self.req.hv_timeout or 1.0)
+                    
+                    logger.info(f"HV set to {value} V successfully on attempt {attempt}")
+                    self.append_hv_log(f"Success: HV set to {value} V")
+                    return True
+                    
+                except Exception as e:
+                    logger.error(f"Failed to set HV to {value} V on attempt {attempt}/{max_retries}: {e}")
+                    self.append_hv_log(f"Error: {e}")
+                    
+                    if attempt < max_retries:
+                        logger.info(f"Retrying in {retry_delay}s...")
+                        self.append_hv_log(f"Retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"Failed to set HV to {value} V after {max_retries} attempts")
+                        self.append_hv_log(f"Failed after {max_retries} attempts")
+                        return False
+            return False
+
+    def wait_for_hv(self, target: float, tolerance: float = 0.5, max_wait: float = 30.0, poll_interval: float = 2.0) -> bool:
         start = time.time()
         logger.info(f"Waiting for HV to reach target {target} V (±{tolerance} V), max_wait={max_wait}s")
+        with self.lock:
+            self.append_hv_log(f"Waiting for HV to reach target {target} V (±{tolerance} V)")
         while time.time() - start < max_wait:
             hv = self._read_hv()
             msg_mon = f"Monitored HV: {hv} V" if hv is not None else "Monitored HV: read error"
@@ -174,10 +257,16 @@ class MeasurementTask:
             if hv is not None:
                 # Compare absolute difference; some systems use negative voltages
                 if abs(hv - target) <= tolerance:
-                    logger.info(f"HV reached target: measured {hv} V within tolerance (target {target} V)")
+                    msg_reached = f"HV reached target: measured {hv} V within tolerance (target {target} V)"
+                    logger.info(msg_reached)
+                    with self.lock:
+                        self.append_hv_log(msg_reached)
                     return True
             time.sleep(poll_interval)
-        logger.warning(f"HV did not reach target within tolerance after {max_wait}s (last measured HV may differ)")
+        msg_timeout = f"HV did not reach target within tolerance after {max_wait}s (last measured HV may differ)"
+        logger.warning(msg_timeout)
+        with self.lock:
+            self.append_hv_log(msg_timeout)
         return False
 
     def build_runner_cmd(self, hv: Optional[float], threshold: Optional[float]) -> List[str]:
@@ -225,41 +314,24 @@ class MeasurementTask:
             current_hv = self._read_hv()
             if current_hv is not None:
                 self.current_hv = current_hv
-                msg_read = f"Current HV: {current_hv} V"
-                logger.info(msg_read)
-                with self.lock:
-                    self.append_log(msg_read)
+                logger.info(f"Current HV: {current_hv} V")
         
         # Wait for HV before starting measurement process
         if hv is not None:
-            # Set HV before waiting
-            try:
-                msg_set = f"Setting HV to {hv} V..."
-                logger.info(msg_set)
-                with self.lock:
-                    self.append_log(msg_set)
-                send_caen_command('SET', 'VSET', str(hv), channel=str(self.req.hv_channel or '1'), device=self.req.hv_device or 'COM10', baudrate=self.req.hv_baudrate or 9600, timeout=self.req.hv_timeout or 1.0)
-            except Exception as e:
-                msg_err = f"Failed to set HV to {hv} V: {e}"
-                logger.error(msg_err)
-                with self.lock:
-                    self.append_log(msg_err)
+            # Set HV with retry logic
+            if not self._set_hv(hv):
+                logger.error(f"Skipping measurement: Failed to set HV to {hv} V")
                 return
+            
             msg_wait = f"Waiting for HV to reach target {hv} V before starting measurement..."
             logger.info(msg_wait)
-            with self.lock:
-                self.append_log(msg_wait)
             ok = self.wait_for_hv(hv, tolerance=0.5, max_wait=max((self.req.hv_timeout or 1.0) * 10, 30.0))
             if not ok:
                 msg_skip = f"HV not within tolerance (target {hv} V). Skipping measurement."
-                with self.lock:
-                    self.append_log(msg_skip)
                 logger.info(f"Skipping measurement: HV not within tolerance for target {hv} V")
                 return
             msg_ready = f"HV reached target {hv} V. Proceeding to measurement."
             logger.info(msg_ready)
-            with self.lock:
-                self.append_log(msg_ready)
         # Compose info for this iteration
         hv_display = f"{hv} V" if hv is not None else (f"{self.current_hv} V" if self.current_hv is not None else "unknown")
         thr_display = f"{threshold}" if threshold is not None else "default"
@@ -281,7 +353,10 @@ class MeasurementTask:
         start = time.time()
         for line in self.proc.stdout:  # type: ignore
             with self.lock:
-                self.append_log(line.rstrip())
+                # Append all subprocess output to dedicated runner log
+                self.runner_log_lines.append(line.rstrip())
+                if len(self.runner_log_lines) > 10000:
+                    self.runner_log_lines.pop(0)
                 
                 # Detect acquisition start
                 if 'Starting Acquisition' in line:
@@ -378,19 +453,53 @@ class MeasurementTask:
             self.running = False
             if self.proc and self.proc.poll() is None:
                 try:
-                    # Attempt graceful shutdown: send "q\nq\n" and wait a moment
+                    # Attempt graceful shutdown: send quit command and wait
+                    logger.info("Sending quit command to WaveDemo...")
+                    self.append_log("Sending quit command to WaveDemo...")
                     if self.proc.stdin:
                         try:
                             self.proc.stdin.write("q\nq\n")
                             self.proc.stdin.flush()
-                        except Exception:
-                            pass
-                    time.sleep(1.0)
-                    # If still running, terminate
+                        except Exception as e:
+                            logger.warning(f"Failed to send quit command: {e}")
+                    
+                    # Wait up to 5 seconds for graceful exit
+                    for i in range(10):
+                        time.sleep(0.5)
+                        if self.proc.poll() is not None:
+                            logger.info("WaveDemo stopped gracefully")
+                            self.append_log("WaveDemo stopped gracefully")
+                            return
+                    
+                    # If still running after 5s, send terminate signal
                     if self.proc.poll() is None:
+                        logger.warning("WaveDemo did not stop gracefully, sending terminate signal...")
+                        self.append_log("WaveDemo did not stop gracefully, sending terminate signal...")
                         self.proc.terminate()
-                except Exception:
-                    pass
+                        
+                        # Wait another 3 seconds
+                        for i in range(6):
+                            time.sleep(0.5)
+                            if self.proc.poll() is not None:
+                                logger.info("WaveDemo terminated successfully")
+                                self.append_log("WaveDemo terminated successfully")
+                                return
+                        
+                        # Last resort: force kill
+                        if self.proc.poll() is None:
+                            logger.error("WaveDemo did not respond to terminate, forcing kill...")
+                            self.append_log("WaveDemo did not respond to terminate, forcing kill...")
+                            self.proc.kill()
+                            time.sleep(1.0)
+                            if self.proc.poll() is not None:
+                                logger.info("WaveDemo killed successfully")
+                                self.append_log("WaveDemo killed successfully")
+                            else:
+                                logger.error("Failed to kill WaveDemo process")
+                                self.append_log("ERROR: Failed to kill WaveDemo process")
+                except Exception as e:
+                    logger.error(f"Error during stop: {e}")
+                    self.append_log(f"ERROR during stop: {e}")
 
     def snapshot(self) -> MeasureStatus:
         with self.lock:
@@ -462,6 +571,8 @@ class MeasurementTask:
                 total_elapsed=total_elapsed,
                 total_remaining=total_remaining,
                 runs=self.runs,
+                runner_log=list(self.runner_log_lines),
+                hv_log=list(hv_log_lines),
             )
 
 measurements: Dict[str, MeasurementTask] = {}
@@ -495,6 +606,14 @@ def hv_send(req: HVSendRequest, username: str = Depends(verify_credentials)):
 # ---------------------- MEASUREMENT ENDPOINTS ----------------------
 @app.post('/measure/start')
 def measure_start(req: MeasureStartRequest, username: str = Depends(verify_credentials)):
+    # Check if WaveDemo is already running
+    if is_wavedemo_running():
+        logger.error("Cannot start measurement: WaveDemo_x743.exe is already running")
+        raise HTTPException(
+            status_code=409, 
+            detail="Cannot start measurement: WaveDemo_x743.exe is already running. Please stop the existing process first."
+        )
+    
     task = MeasurementTask(req)
     measurements[task.id] = task
     return {'status': 'started', 'id': task.id}
@@ -553,6 +672,20 @@ def yaml_list(username: str = Depends(verify_credentials)):
     yaml_files = glob.glob('*.yaml')
     return {'files': sorted(yaml_files)}
 
+@app.post('/hv/clear_log')
+def hv_clear_log(username: str = Depends(verify_credentials)):
+    """Clear the HV log history."""
+    global hv_log_lines
+    hv_log_lines.clear()
+    return {'status': 'ok', 'message': 'HV log cleared'}
+
+@app.post('/hv/clear_log')
+def hv_clear_log(username: str = Depends(verify_credentials)):
+    """Clear the HV log history."""
+    global hv_log_lines
+    hv_log_lines.clear()
+    return {'status': 'ok', 'message': 'HV log cleared'}
+
 # ---------------------- WEBSOCKETS ----------------------
 @app.websocket('/ws/hv')
 async def ws_hv(ws: WebSocket, interval: float = 2.0, channel: str = '1', device: str = 'COM10', baudrate: int = 9600, timeout: float = 1.0):
@@ -561,13 +694,18 @@ async def ws_hv(ws: WebSocket, interval: float = 2.0, channel: str = '1', device
         while True:
             try:
                 hv = send_caen_command('MON', 'VMON', channel=channel, device=device, baudrate=baudrate, timeout=timeout)
+                await ws.send_json({'ts': time.time(), 'hv': hv})
+            except WebSocketDisconnect:
+                # Connection closed by client
+                break
             except Exception as e:
-                hv = ''
-                await ws.send_json({'error': str(e)})
-            await ws.send_json({'ts': time.time(), 'hv': hv})
+                # On error, skip sending and wait for next update
+                logger.warning(f"HV monitoring error: {e}")
             await asyncio_sleep(interval)
     except WebSocketDisconnect:
-        return
+        pass
+    except Exception as e:
+        logger.error(f"HV WebSocket error: {e}")
 
 @app.websocket('/ws/measure/{mid}')
 async def ws_measure(ws: WebSocket, mid: str):
@@ -643,7 +781,7 @@ table.run-history tbody tr:nth-child(even){background:rgba(0,0,0,0.03)}
         </select>
     </div>
 </h1>
-<div class='row'><div class='col'><fieldset><legend>Setup Control</legend><label>YAML config <select id='m_yaml'><option value=''>Loading...</option></select></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Source <input id='m_source' list='source_list' placeholder='e.g. BKG'/><datalist id='source_list'><option>BKG</option><option>Cs-137_D10-224</option><option>Cd-109_M8-546</option><option>Fe-55_AC-6389</option></datalist><label>Scintillator <input id='m_scint' list='scint_list' placeholder='e.g. RMPS470'/><datalist id='scint_list'><option>RMPS470</option><option>BC-408</option></datalist><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='1800,1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' value='1'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label></fieldset></div><div class='col'><fieldset><legend>HV Control</legend><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></fieldset></div></div><div class='row'><div class='col'><fieldset><legend>Measurement Control</legend><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>HV Plot</span><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_hv'></canvas></div><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Events Plot</span><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_events'></canvas></div></div><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Rate Plot</span><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_rate'></canvas></div><div class='col'><fieldset><legend>Progress</legend><div class='progress-wrap'><div class='progress-labels'><span>Elapsed: <span id='prog_elapsed'>0s</span></span><span>Remaining: <span id='prog_remaining'>0s</span></span></div><div class='progress-bar'><div id='prog_bar'></div></div></div></fieldset><fieldset style='margin-top:12px'><legend>Log</legend><div id='log'></div></fieldset><fieldset style='margin-top:12px'><legend>Run History</legend><button id='btn_run_history_dl' type='button' style='margin-bottom:6px'>Download CSV</button><table class='run-history' id='run_history'><thead><tr><th>#</th><th>Timestamp</th><th>Repeat</th><th>Iteration</th><th>HV</th><th>Threshold</th><th>Duration(s)</th><th>Run Info</th></tr></thead><tbody></tbody></table></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
+<div class='row'><div class='col'><fieldset><legend>Setup Control</legend><label>YAML config <select id='m_yaml'><option value=''>Loading...</option></select></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Source <input id='m_source' list='source_list' placeholder='e.g. BKG'/><datalist id='source_list'><option>BKG</option><option>Cs-137_D10-224</option><option>Cd-109_M8-546</option><option>Fe-55_AC-6389</option></datalist><label>Scintillator <input id='m_scint' list='scint_list' placeholder='e.g. RMPS470'/><datalist id='scint_list'><option>RMPS470</option><option>BC-408</option></datalist><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='1800,1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' value='1'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label></fieldset></div><div class='col'><fieldset><legend>HV Control</legend><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></fieldset></div></div><div class='row'><div class='col'><fieldset><legend>Measurement Control</legend><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>HV Plot</span><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_hv'></canvas></div><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Events Plot</span><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_events'></canvas></div></div><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Rate Plot</span><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_rate'></canvas></div><div class='col'><fieldset><legend>Progress</legend><div class='progress-wrap'><div class='progress-labels'><span>Elapsed: <span id='prog_elapsed'>0s</span></span><span>Remaining: <span id='prog_remaining'>0s</span></span></div><div class='progress-bar'><div id='prog_bar'></div></div></div></fieldset><fieldset style='margin-top:12px'><legend>Measurement Log</legend><button id='btn_clear_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='log'></div></fieldset><fieldset style='margin-top:12px'><legend>HV Log (CAEN commands)</legend><button id='btn_clear_hv_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='hv_log' style='white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px'></div></fieldset><fieldset style='margin-top:12px'><legend>Runner Log (dt5743_runner)</legend><button id='btn_clear_runner_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='runner_log' style='white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px'></div></fieldset><fieldset style='margin-top:12px'><legend>Run History</legend><button id='btn_run_history_dl' type='button' style='margin-bottom:6px'>Download CSV</button><table class='run-history' id='run_history'><thead><tr><th>#</th><th>Timestamp</th><th>Repeat</th><th>Iteration</th><th>HV</th><th>Threshold</th><th>Duration(s)</th><th>Run Info</th></tr></thead><tbody></tbody></table></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
 
 @app.get('/static/app.js')
 def static_app_js(username: str = Depends(verify_credentials)):

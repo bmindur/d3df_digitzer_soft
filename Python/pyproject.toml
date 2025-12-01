@@ -1,6 +1,6 @@
 [project]
 name = "d3df-single-pmt"
-version = "0.6.2"
+version = "0.7.8"
 description = "CAEN DT5743 waveform CSV to HDF5 converter, pulse analysis, and advanced plotting for single PMT workflows."
 authors = [{name = "Bartosz Mindur", email = "mindur@agh.edu.pl"}]
 readme = "README.md"
@@ -21,7 +21,8 @@ dependencies = [
   "pyserial",
   "pyyaml",
   "fastapi",
-  "uvicorn[standard]"
+  "uvicorn[standard]",
+  "psutil"
 ]
 
 [project.urls]
