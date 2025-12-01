@@ -1,9 +1,12 @@
-name: Build and Release on Tag
+name: Build and Release on Tag or Release
 
 on:
   push:
     tags:
       - 'v*'
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -14,6 +17,8 @@ jobs:
     defaults:
       run:
         working-directory: Python
+    env:
+      TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,11 +40,12 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-dist-${{ github.ref_name }}
+          name: python-dist-${{ env.TAG_NAME }}
           path: Python/dist/*
           if-no-files-found: error
 
       - name: Create GitHub Release and upload assets
+        if: github.event_name == 'push' || github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -47,5 +53,6 @@ jobs:
           draft: false
           fail_on_unmatched_files: true
           generate_release_notes: true
+          tag_name: ${{ env.TAG_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
