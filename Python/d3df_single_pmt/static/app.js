@@ -1,5 +1,29 @@
 (function(){
   const el = id => document.getElementById(id);
+  
+  // Collapsible fieldsets for mobile
+  function initCollapsible(){
+    const collapsibles = document.querySelectorAll('.collapsible-fieldset');
+    collapsibles.forEach(fieldset => {
+      const legend = fieldset.querySelector('legend');
+      if(legend){
+        legend.addEventListener('click', function(){
+          fieldset.classList.toggle('collapsed');
+          // Save state
+          const id = fieldset.id;
+          if(id){
+            localStorage.setItem('collapsed_' + id, fieldset.classList.contains('collapsed'));
+          }
+        });
+        // Restore state
+        const id = fieldset.id;
+        if(id && localStorage.getItem('collapsed_' + id) === 'true'){
+          fieldset.classList.add('collapsed');
+        }
+      }
+    });
+  }
+  
   // Theme handling
   const themeSelect = document.getElementById('theme_select');
   const savedTheme = localStorage.getItem('ui_theme');
@@ -127,6 +151,9 @@
   const hvChart = new Chart(el('chart_hv'), { type:'line', data:{ datasets:[{ label:'HV (V)', data:hvPoints, borderColor:cvars.hv, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ title:{ display:true, text:'V', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
   const evChart = new Chart(el('chart_events'), { type:'line', data:{ datasets:[{ label:'Events', data:evPoints, borderColor:cvars.events, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ beginAtZero:true, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
   const rateChart = new Chart(el('chart_rate'), { type:'line', data:{ datasets:[{ label:'Rate (1/s)', data:ratePoints, borderColor:cvars.rate, tension:0.1, pointRadius:0 }] }, options:{ responsive:true, animation:false, scales:{ x:{ type:'linear', title:{ display:true, text:'Time (s)', color:cvars.fg }, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } }, y:{ beginAtZero:true, ticks:{ color:cvars.fg }, grid:{ color:cvars.border } } } } });
+  
+  // Initialize collapsible sections after DOM is ready
+  setTimeout(initCollapsible, 100);
 
   // HV websocket
   let wsHV = null;

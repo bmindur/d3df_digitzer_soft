@@ -737,7 +737,7 @@ def asyncio_sleep(seconds: float):
     return asyncio.sleep(seconds)
 
 # ---------------------- SIMPLE UI ----------------------
-INDEX_HTML = """<!doctype html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/><title>Digitizer Web Interface</title><script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'></script><style>
+INDEX_HTML = """<!doctype html><html><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'/><title>Digitizer Web Interface</title><script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'></script><style>
 /* Theme variables */
 :root{
     --bg:#ffffff; --fg:#111111; --muted:#555; --card:#f7f7f7; --border:#cccccc; --accent:#2663ff; --accent-contrast:#ffffff; --table-head:#222; --table-head-fg:#eee;
@@ -749,25 +749,77 @@ INDEX_HTML = """<!doctype html><html><head><meta charset='utf-8'/><meta name='vi
 .theme-light{ --bg:#ffffff; --fg:#111111; --muted:#555; --card:#f7f7f7; --border:#cccccc; --accent:#2663ff; --accent-contrast:#ffffff; --table-head:#222; --table-head-fg:#eee; }
 
 body{font-family:system-ui,Arial,sans-serif;margin:16px;background:var(--bg);color:var(--fg)}
-h1{display:flex;align-items:center;justify-content:space-between}
+h1{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+h1>span{font-size:1.5rem}
+h2{font-size:1.3rem;margin:24px 0 12px}
 .theme-toggle{display:flex;align-items:center;gap:8px;font-size:.9rem}
 .row{display:flex;flex-wrap:wrap;gap:16px}.col{flex:1 1 400px;min-width:360px}
-fieldset{border:1px solid var(--border);background:var(--card);padding:12px;border-radius:8px}
+fieldset{border:1px solid var(--border);background:var(--card);padding:12px;border-radius:8px;margin-bottom:12px}
+fieldset legend{font-weight:600;padding:0 6px}
+.collapsible-fieldset legend{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
+.collapsible-fieldset legend::before{content:'▼';font-size:.7em;transition:transform 0.2s}
+.collapsible-fieldset.collapsed legend::before{transform:rotate(-90deg)}
+.collapsible-fieldset .fieldset-content{overflow:hidden;transition:max-height 0.3s ease-out}
+.collapsible-fieldset.collapsed .fieldset-content{display:none}
 label{display:block;margin-top:6px;font-size:.9rem;color:var(--muted)}
-input,textarea,select{width:100%;padding:6px;margin-top:4px;background:var(--bg);color:var(--fg);border:1px solid var(--border)}
-button{margin-top:8px;padding:6px 10px;background:var(--accent);color:var(--accent-contrast);border:0;border-radius:6px;cursor:pointer}
+input,textarea,select{width:100%;padding:10px 8px;margin-top:4px;background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:16px;box-sizing:border-box}
+input[type="number"]{-moz-appearance:textfield}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+button{margin-top:8px;padding:10px 14px;background:var(--accent);color:var(--accent-contrast);border:0;border-radius:6px;cursor:pointer;font-size:1rem;min-height:44px;font-weight:500}
 button:disabled{background:var(--border);color:var(--muted);cursor:not-allowed;opacity:0.6}
-code{background:var(--card);padding:2px 4px;border-radius:4px;border:1px solid var(--border)}
+button:active:not(:disabled){transform:scale(0.98)}
+code{background:var(--card);padding:2px 4px;border-radius:4px;border:1px solid var(--border);font-size:.9em}
 canvas{max-height:320px}
-#log{white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px}
-.status-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:.75rem;font-weight:600}
+#log,#hv_log,#runner_log{white-space:pre-wrap;max-height:200px;overflow:auto;background:#111;color:#ddd;padding:8px;font-size:.85rem;border-radius:4px}
+.status-badge{display:inline-block;padding:4px 8px;border-radius:4px;font-size:.8rem;font-weight:600}
 #hv_status.connected{background:#2a6;color:#fff}#hv_status.disconnected{background:#c22;color:#fff}
-.progress-wrap{margin-top:8px}.progress-labels{display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px;color:var(--muted)}
-.progress-bar{width:100%;height:12px;background:#eee;border-radius:6px;overflow:hidden}.progress-bar>div{height:100%;background:var(--accent);width:0%}
-table.run-history{width:100%;border-collapse:collapse;font-size:.75rem;margin-top:12px}
-table.run-history th,table.run-history td{border:1px solid var(--border);padding:4px 6px;text-align:left}
-table.run-history th{background:var(--table-head);color:var(--table-head-fg)}
+.progress-wrap{margin-top:8px}.progress-labels{display:flex;justify-content:space-between;font-size:.9rem;margin-bottom:6px;color:var(--muted)}
+.progress-bar{width:100%;height:16px;background:var(--border);border-radius:8px;overflow:hidden}.progress-bar>div{height:100%;background:var(--accent);width:0%;transition:width 0.3s}
+table.run-history{width:100%;border-collapse:collapse;font-size:.75rem;margin-top:12px;display:block;overflow-x:auto}
+table.run-history th,table.run-history td{border:1px solid var(--border);padding:6px 8px;text-align:left;white-space:nowrap}
+table.run-history th{background:var(--table-head);color:var(--table-head-fg);position:sticky;top:0}
 table.run-history tbody tr:nth-child(even){background:rgba(0,0,0,0.03)}
+
+/* Mobile optimizations */
+@media (max-width: 768px){
+    body{margin:8px;font-size:14px}
+    h1>span{font-size:1.2rem}
+    h2{font-size:1.1rem;margin:16px 0 8px}
+    .theme-toggle{font-size:.85rem}
+    .row{gap:8px}
+    .col{min-width:100%;flex:1 1 100%}
+    fieldset{padding:10px;margin-bottom:8px}
+    label{font-size:.85rem;margin-top:8px}
+    input,textarea,select{padding:12px 10px;font-size:16px}
+    button{padding:12px 16px;margin-top:10px;font-size:1rem;width:100%}
+    button[style*="padding:4px"]{width:auto;padding:8px 12px !important;font-size:.9rem}
+    .status-badge{padding:6px 10px;font-size:.85rem}
+    #log,#hv_log,#runner_log{max-height:150px;font-size:.8rem;padding:6px}
+    canvas{max-height:250px}
+    .progress-bar{height:20px}
+    .progress-labels{font-size:.85rem}
+    table.run-history{font-size:.7rem}
+    table.run-history th,table.run-history td{padding:4px 6px}
+    code{font-size:.85em}
+    /* Make inline button groups stack on mobile */
+    div[style*="display:flex"]{flex-direction:column !important;align-items:stretch !important}
+    div[style*="display:flex"] button{width:100%}
+    div[style*="display:flex"] .status-badge{align-self:flex-start;margin-top:8px}
+    /* Keep raw HV command inputs horizontal */
+    fieldset div[style*="display:flex;gap:8px"]:has(input[id^="hv_"]){flex-direction:row !important}
+    fieldset div[style*="display:flex;gap:8px"]:has(input[id^="hv_"]) input{flex:1}
+    /* Chart clear buttons stay inline */
+    div[style*="justify-content:space-between"]{flex-direction:row !important;align-items:center !important}
+    div[style*="justify-content:space-between"] button{width:auto !important}
+}
+
+@media (max-width: 480px){
+    body{margin:4px;font-size:13px}
+    h1>span{font-size:1.1rem}
+    fieldset{padding:8px}
+    .row{gap:4px}
+    table.run-history{font-size:.65rem}
+}
 </style></head>
 <body>
 <h1>
@@ -781,7 +833,7 @@ table.run-history tbody tr:nth-child(even){background:rgba(0,0,0,0.03)}
         </select>
     </div>
 </h1>
-<div class='row'><div class='col'><fieldset><legend>Setup Control</legend><label>YAML config <select id='m_yaml'><option value=''>Loading...</option></select></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Source <input id='m_source' list='source_list' placeholder='e.g. BKG'/><datalist id='source_list'><option>BKG</option><option>Cs-137_D10-224</option><option>Cd-109_M8-546</option><option>Fe-55_AC-6389</option></datalist><label>Scintillator <input id='m_scint' list='scint_list' placeholder='e.g. RMPS470'/><datalist id='scint_list'><option>RMPS470</option><option>BC-408</option></datalist><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='1800,1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' value='1'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label></fieldset></div><div class='col'><fieldset><legend>HV Control</legend><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></fieldset></div></div><div class='row'><div class='col'><fieldset><legend>Measurement Control</legend><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>HV Plot</span><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_hv'></canvas></div><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Events Plot</span><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_events'></canvas></div></div><div class='row'><div class='col'><div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><span style='font-weight:600'>Rate Plot</span><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem'>Clear</button></div><canvas id='chart_rate'></canvas></div><div class='col'><fieldset><legend>Progress</legend><div class='progress-wrap'><div class='progress-labels'><span>Elapsed: <span id='prog_elapsed'>0s</span></span><span>Remaining: <span id='prog_remaining'>0s</span></span></div><div class='progress-bar'><div id='prog_bar'></div></div></div></fieldset><fieldset style='margin-top:12px'><legend>Measurement Log</legend><button id='btn_clear_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='log'></div></fieldset><fieldset style='margin-top:12px'><legend>HV Log (CAEN commands)</legend><button id='btn_clear_hv_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='hv_log' style='white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px'></div></fieldset><fieldset style='margin-top:12px'><legend>Runner Log (dt5743_runner)</legend><button id='btn_clear_runner_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='runner_log' style='white-space:pre-wrap;max-height:160px;overflow:auto;background:#111;color:#ddd;padding:8px'></div></fieldset><fieldset style='margin-top:12px'><legend>Run History</legend><button id='btn_run_history_dl' type='button' style='margin-bottom:6px'>Download CSV</button><table class='run-history' id='run_history'><thead><tr><th>#</th><th>Timestamp</th><th>Repeat</th><th>Iteration</th><th>HV</th><th>Threshold</th><th>Duration(s)</th><th>Run Info</th></tr></thead><tbody></tbody></table></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
+<div class='row'><div class='col'><fieldset class='collapsible-fieldset' id='fs_setup'><legend>Setup Control</legend><div class='fieldset-content'><label>YAML config <select id='m_yaml'><option value=''>Loading...</option></select></label><label>Data output <input id='m_out' value='./data_output'/></label><label>WaveDemo exe <input id='m_exe' value='WaveDemo_x743.exe'/></label><label>Source <input id='m_source' list='source_list' placeholder='e.g. BKG'/><datalist id='source_list'><option>BKG</option><option>Cs-137_D10-224</option><option>Cd-109_M8-546</option><option>Fe-55_AC-6389</option></datalist></label><label>Scintillator <input id='m_scint' list='scint_list' placeholder='e.g. RMPS470'/><datalist id='scint_list'><option>RMPS470</option><option>BC-408</option></datalist></label><label>HV sequence (comma-separated) <input id='m_hvseq' placeholder='1800,1700'/></label><label>Thresholds (comma-separated) <input id='m_thrseq' placeholder='-0.10,-0.20'/></label><label>Repeat (-1=infinite, empty=1) <input id='m_repeat' value='1'/></label><label>Max events <input id='m_maxev' type='number' value='0'/></label><label>Max time (s) <input id='m_maxt' type='number' value='30'/></label></div></fieldset></div><div class='col'><fieldset class='collapsible-fieldset' id='fs_hv'><legend>HV Control</legend><div class='fieldset-content'><label>Device <input id='hv_device' value='COM10'/></label><label>Channel <input id='hv_channel' value='1'/></label><label>Baudrate <input id='hv_baud' type='number' value='9600'/></label><div style='display:flex;gap:8px;align-items:end'><div style='flex:1'><label>Set HV (V) <input id='hv_value' type='number' step='1' value='1800'/></label></div><div><button id='btn_hv_set' type='button'>Set HV</button><button id='btn_hv_read' type='button'>Read HV</button></div></div><div><label>Raw HV Command</label><div style='display:flex;gap:8px'><input id='hv_cmd' value='MON' style='max-width:80px'/><input id='hv_par' value='VMON' style='max-width:120px'/><input id='hv_val' placeholder='val (optional)' style='max-width:140px'/><button id='btn_hv_send' type='button'>Send</button></div></div><div style='display:flex;gap:8px;align-items:end;margin-top:8px'><div style='flex:1'><label>Monitor interval (s)<input id='hv_interval' type='number' step='0.1' value='2'/></label></div><button id='btn_hv_toggle' type='button'>Start Monitoring</button><span id='hv_status' class='status-badge disconnected'>OFF</span></div><div id='hv_result' style='margin-top:8px'>Result: <code>(none)</code></div></div></fieldset></div></div><div class='row'><div class='col'><fieldset><legend>Measurement Control</legend><div style='display:flex;gap:8px;align-items:end'><button id='btn_m_start' type='button'>Start</button><button id='btn_m_stop' type='button' disabled>Stop</button><div>Current ID: <code id='m_id'>(none)</code></div></div></fieldset></div></div><h2>Live Monitoring</h2><div class='row'><div class='col'><fieldset class='collapsible-fieldset' id='fs_hv_plot'><legend>HV Plot</legend><div class='fieldset-content'><button id='btn_clear_hv' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:8px'>Clear</button><canvas id='chart_hv'></canvas></div></fieldset></div><div class='col'><fieldset class='collapsible-fieldset' id='fs_events_plot'><legend>Events Plot</legend><div class='fieldset-content'><button id='btn_clear_events' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:8px'>Clear</button><canvas id='chart_events'></canvas></div></fieldset></div></div><div class='row'><div class='col'><fieldset class='collapsible-fieldset' id='fs_rate_plot'><legend>Rate Plot</legend><div class='fieldset-content'><button id='btn_clear_rate' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:8px'>Clear</button><canvas id='chart_rate'></canvas></div></fieldset></div><div class='col'><fieldset class='collapsible-fieldset' id='fs_progress'><legend>Progress</legend><div class='fieldset-content'><div class='progress-wrap'><div class='progress-labels'><span>Elapsed: <span id='prog_elapsed'>0s</span></span><span>Remaining: <span id='prog_remaining'>0s</span></span></div><div class='progress-bar'><div id='prog_bar'></div></div></div></div></fieldset><fieldset class='collapsible-fieldset' id='fs_mlog'><legend>Measurement Log</legend><div class='fieldset-content'><button id='btn_clear_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='log'></div></div></fieldset><fieldset class='collapsible-fieldset' id='fs_hvlog'><legend>HV Log (CAEN commands)</legend><div class='fieldset-content'><button id='btn_clear_hv_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='hv_log'></div></div></fieldset><fieldset class='collapsible-fieldset' id='fs_runlog'><legend>Runner Log (dt5743_runner)</legend><div class='fieldset-content'><button id='btn_clear_runner_log' type='button' style='padding:4px 8px;font-size:.85rem;margin-bottom:6px'>Clear</button><div id='runner_log'></div></div></fieldset><fieldset class='collapsible-fieldset' id='fs_history'><legend>Run History</legend><div class='fieldset-content'><button id='btn_run_history_dl' type='button' style='margin-bottom:6px'>Download CSV</button><table class='run-history' id='run_history'><thead><tr><th>#</th><th>Timestamp</th><th>Repeat</th><th>Iteration</th><th>HV</th><th>Threshold</th><th>Duration(s)</th><th>Run Info</th></tr></thead><tbody></tbody></table></div></fieldset></div></div><script src='/static/app.js'></script></body></html>"""
 
 @app.get('/static/app.js')
 def static_app_js(username: str = Depends(verify_credentials)):
