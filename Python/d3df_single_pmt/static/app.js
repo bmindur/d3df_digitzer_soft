@@ -58,8 +58,17 @@
   const hvPoints = [];
   const evPoints = [];
   const ratePoints = [];
+  const MAX_CHART_POINTS = 5000; // Limit chart points to prevent memory issues on long runs
   const t0 = Date.now();
   const tx = () => (Date.now() - t0) / 1000.0;
+  
+  // Trim array to max size (keep most recent points)
+  function trimArray(arr, maxSize) {
+    if (arr.length > maxSize) {
+      arr.splice(0, arr.length - maxSize);
+    }
+  }
+  
   function appendLog(msg){ const area = el('log'); area.textContent += msg + '\n'; area.scrollTop = area.scrollHeight; }
 
   // Load and save field values from localStorage
@@ -178,6 +187,7 @@
           const y = Number(data.hv);
           if(!Number.isNaN(y)){
             hvPoints.push({ x: tx(), y: y });
+            trimArray(hvPoints, MAX_CHART_POINTS);
             hvChart.update();
           }
         }
@@ -196,8 +206,15 @@
 
   // Measurement websocket
   let wsM = null;
+  let measurementId = null;
+  let measurementReconnectTimer = null;
+  let lastChartUpdate = 0;
+  const CHART_UPDATE_THROTTLE = 1000; // Update charts at most once per second
+  
   function connectMeasure(id){
-    if(wsM){ wsM.close(); wsM = null; }
+    measurementId = id;
+    if(wsM){ try { wsM.close(); } catch(e) {} wsM = null; }
+    if(measurementReconnectTimer) { clearTimeout(measurementReconnectTimer); measurementReconnectTimer = null; }
     wsM = new WebSocket('ws://' + location.host + '/ws/measure/' + id);
     wsM.onmessage = function(ev){
       try {
@@ -248,11 +265,28 @@
           pb.style.width = pct.toFixed(1) + '%';
         }
         const xval = tx();
-        if(typeof d.events === 'number'){ evPoints.push({ x: xval, y: d.events }); evChart.update(); }
-        if(typeof d.rate === 'number'){ ratePoints.push({ x: xval, y: d.rate }); rateChart.update(); }
+        const now = Date.now();
+        let needsUpdate = false;
+        if(typeof d.events === 'number'){ 
+          evPoints.push({ x: xval, y: d.events }); 
+          trimArray(evPoints, MAX_CHART_POINTS);
+          needsUpdate = true;
+        }
+        if(typeof d.rate === 'number'){ 
+          ratePoints.push({ x: xval, y: d.rate }); 
+          trimArray(ratePoints, MAX_CHART_POINTS);
+          needsUpdate = true;
+        }
+        // Throttle chart updates to reduce CPU load
+        if(needsUpdate && (now - lastChartUpdate) > CHART_UPDATE_THROTTLE) {
+          evChart.update();
+          rateChart.update();
+          lastChartUpdate = now;
+        }
         if(!d.running){ 
           document.getElementById('btn_m_stop').disabled = true;
           appendLog('Measurement stopped.');
+          if(measurementReconnectTimer) { clearTimeout(measurementReconnectTimer); measurementReconnectTimer = null; }
         }
         // Update run history table
         if(d.runs){
@@ -293,6 +327,18 @@
           }
         }
       } catch(e) { /* ignore */ }
+    };
+    wsM.onclose = function(){
+      appendLog('WebSocket closed. Attempting reconnect in 5s...');
+      if(measurementId && !measurementReconnectTimer) {
+        measurementReconnectTimer = setTimeout(function(){
+          appendLog('Reconnecting to measurement WebSocket...');
+          connectMeasure(measurementId);
+        }, 5000);
+      }
+    };
+    wsM.onerror = function(err){
+      appendLog('WebSocket error: ' + (err.message || 'unknown'));
     };
   }
 
@@ -370,6 +416,8 @@
       const j = await res.json();
       appendLog('measure/stop response: ' + JSON.stringify(j));
       el('btn_m_stop').disabled = true;
+      measurementId = null;
+      if(measurementReconnectTimer) { clearTimeout(measurementReconnectTimer); measurementReconnectTimer = null; }
     } catch(err){ console.error('Measure stop error', err); appendLog('Measure stop error: ' + err); }
   };
 
